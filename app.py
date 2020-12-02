@@ -51,7 +51,45 @@ VECTOR_CLOCK = {}
 # ----------------------END SETUP------------------------
 #########################################################
 
-# TODO
+# TODO task 1
+@app.route("/kvs/keys/<string:key>", methods=["GET"])
+def get_key(key):
+    IP_to_GET = get_shard_for_key(key, VIEW)
+    if IP_to_GET == ADDRESS:
+        if key not in kvs:
+            return {
+                "doesExist": False,
+                "error": "Key does not exist",
+                "message": "Error in GET",
+            }, 404
+        else:
+            return {
+                "doesExist": True,
+                "message": "Retrieved successfully",
+                "value": "%s" % (kvs[key]),
+            }, 200
+    else:
+        try:
+            r = requests.get(f"http://{IP_to_GET}/kvs/keys/{key}")
+        except:
+            return {
+                "error": "Unable to connect to shard",
+                "message": "Error in GET",
+            }, 503
+        return r.content, r.status_code
+
+
+# TODO task 1
+@app.route("/kvs/key-count", methods=["GET"])
+def get_key_count():
+    key_count = len(kvs)
+    return {
+        "message": "Key count retrieved successfully",
+        "key-count": str(key_count),
+    }, 200
+
+
+# TODO task 2
 @app.route("/kvs/keys/<string:key>", methods=["PUT"])
 def put_key(key):
     # Try reading the data. If theres an error, return error message
@@ -86,78 +124,19 @@ def put_key(key):
         return resp.content, resp.status_code
 
 
-# TODO
-@app.route("/kvs/keys/<string:key>", methods=["GET"])
-def get_key(key):
-    IP_to_GET = get_shard_for_key(key, VIEW)
-    if IP_to_GET == ADDRESS:
-        if key not in kvs:
-            return {
-                "doesExist": False,
-                "error": "Key does not exist",
-                "message": "Error in GET",
-            }, 404
-        else:
-            return {
-                "doesExist": True,
-                "message": "Retrieved successfully",
-                "value": "%s" % (kvs[key]),
-            }, 200
-    else:
-        try:
-            r = requests.get(f"http://{IP_to_GET}/kvs/keys/{key}")
-        except:
-            return {
-                "error": "Unable to connect to shard",
-                "message": "Error in GET",
-            }, 503
-        return r.content, r.status_code
+# TODO task 3
+@app.route("/kvs/shards", methods=["GET"])
+def get_shards():
+    return
 
 
-# optional TODO
-@app.route("/kvs/keys/<string:key>", methods=["DELETE"])
-def delete_key(key):
-    IP_to_DELETE = get_shard_for_key(key, VIEW)
-    if IP_to_DELETE == ADDRESS:
-        if key not in kvs:
-            return {
-                "doesExist": False,
-                "error": "Key does not exist",
-                "message": "Error in DELETE",
-            }, 404
-        else:
-            del kvs[key]
-            return {
-                "doesExist": True,
-                "message": "Deleted successfully",
-                # "address": "%s" % (ADDRESS), if node holds the key, 'address' should not be included in return
-            }, 200
-    else:
-        try:
-            r = requests.delete(f"http://{IP_to_DELETE}/kvs/keys/{key}")
-        except:
-            return {
-                "error": "Unable to connect to shard",
-                "message": "Error in DELETE",
-            }, 503
-        return r.content, r.status_code
-    return {
-        "error": "function not implemented: Method %s, URL %s, Key: %s, View %s,"
-        % (request.method, request.full_path, key, json.dumps(VIEW))
-    }, 500
+# TODO task 3
+@app.route("/kvs/shards/<string:id>", methods=["GET"])
+def get_shard_by_id(id):
+    return
 
 
-# TODO
-@app.route("/kvs/key-count", methods=["GET"])
-def get_key_count():
-    key_count = len(kvs)
-    return {
-        "message": "Key count retrieved successfully",
-        "key-count": str(key_count),
-    }, 200
-
-
-# TODO part of view change
+# TODO task 4
 def rehash_keys():
     global kvs
     keys_to_delete = []
@@ -176,7 +155,7 @@ def rehash_keys():
     return "Success"
 
 
-# TODO
+# TODO task 4
 @app.route("/kvs/view-change", methods=["PUT"])
 def perform_view_change():
     global VIEW
@@ -218,11 +197,37 @@ def perform_view_change():
     return response_json
 
 
-# Adds a flag to a JSON object to signal that a request originates from internal node
-def add_data_for_internel_request(data):
-    r = dict.copy(data)
-    r["internal"] = True
-    return r
+# optional TODO
+@app.route("/kvs/keys/<string:key>", methods=["DELETE"])
+def delete_key(key):
+    IP_to_DELETE = get_shard_for_key(key, VIEW)
+    if IP_to_DELETE == ADDRESS:
+        if key not in kvs:
+            return {
+                "doesExist": False,
+                "error": "Key does not exist",
+                "message": "Error in DELETE",
+            }, 404
+        else:
+            del kvs[key]
+            return {
+                "doesExist": True,
+                "message": "Deleted successfully",
+                # "address": "%s" % (ADDRESS), if node holds the key, 'address' should not be included in return
+            }, 200
+    else:
+        try:
+            r = requests.delete(f"http://{IP_to_DELETE}/kvs/keys/{key}")
+        except:
+            return {
+                "error": "Unable to connect to shard",
+                "message": "Error in DELETE",
+            }, 503
+        return r.content, r.status_code
+    return {
+        "error": "function not implemented: Method %s, URL %s, Key: %s, View %s,"
+        % (request.method, request.full_path, key, json.dumps(VIEW))
+    }, 500
 
 
 # returns the shard ID for the given key
