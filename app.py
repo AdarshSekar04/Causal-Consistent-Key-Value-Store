@@ -1,7 +1,7 @@
 ###################
 # Course: CSE 138
 # Date: Fall 2020
-# Assignment: #3
+# Assignment: #4
 # Author: Jonathan Amar, Spencer Gurley, Adarsh Sekar, Nick Shekelle
 
 ###################
@@ -17,65 +17,41 @@ import os
 app = Flask(__name__)
 primary = False
 
-# Grab and store keys containing the intial view
-
+#########################################################
+# ----------------------BEGIN SETUP----------------------
 os.environ["PYTHONHASHSEED"] = "0"
 
 try:
-    VIEW_STRING = os.environ["VIEW"]
-    VIEW = VIEW_STRING.split(",")  # Creates the list of nodes in the current View
+    view_string = os.environ["VIEW"]
+    nodes = view_string.split(",")  # Creates the list of nodes in the current View
 except KeyError:
-    VIEW = []
+    raise Exception("VIEW required")
+try:
+    REPL = int(os.environ["REPL_FACTOR"])
+except KeyError:
+    raise Exception("No REPL FACTOR provided")
 try:
     ADDRESS = os.environ["ADDRESS"]
 except KeyError:
     raise Exception("No address provided")
-if ADDRESS not in VIEW:
-    raise Exception("Address not included in view")
 
+# TODO does len(nodes) need to be divisible by REPL?
+if len(nodes) % REPL != 0:
+    raise Exception("Not sure if this is allowed")
 
-HEADER = {"Content-Type": "application/json"}
-kvs = dict()
+# create the VIEW dict
+VIEW = {}
+for i in range(len(nodes) // REPL):
+    VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
 
-# ------------------------------ #
-# For all key-value operations:
+kvs = {}
 
-#     The node that directly receives the request from the client should verify the key.
+VECTOR_CLOCK = {}
 
-#     The node that directly receives the request from the client should verify the value (Insert and update).
+# ----------------------END SETUP------------------------
+#########################################################
 
-#     If a node receiving a request acts as a proxy, its response should include the address of the correct storage node.
-
-#     If a node receiving a request does not act as a proxy (it is the correct storage node for the requested key), its response should not include the address of the storage node (should not include its own address).
-
-# For the below operation descriptions, it is assumed that node1 (10.10.0.4:13800) does not store the key, sampleKey, and that node2 (10.10.0.5:13800) does store the key.
-# ------------------------------ #
-
-
-# insert a key named sampleKey, send a PUT request to /kvs/keys/sampleKey.
-
-#    If no value is provided for the new key, the key-value store should respond with status code 400 and JSON: {"error":"Value is missing","message":"Error in PUT"}.
-
-#    If the value provided for the new key has length greater than 50, the key-value store should respond with status code 400 and JSON: {"error":"Key is too long","message":"Error in PUT"}.
-
-#    On success, the key-value store should respond with status code 201 and JSON: {"message":"Added successfully","replaced":false,"address":"10.10.0.5:13800"}. This example assumes the receiving node (node1) does not have address "10.10.0.5:13800" and it acted as a proxy to the node (node2) with that address. (Remember the follower from assignment 2?)
-
-# To update an existing key named sampleKey, send a PUT request to /kvs/keys/sampleKey.
-
-#     If no updated value is provided for the key, the key-value store should respond with status code 400 and JSON: {"error":"Value is missing","message":"Error in PUT"}
-
-#     The key-value store should respond with status code 200 and JSON: {"message":"Updated successfully","replaced":true}. This example assumes the receiving node (node2) stores the key, sampleKey.
-
-# Returns
-# {
-#     "error":
-#     "message":
-#     "replaced":
-# }
-
-# To PUT a key, we simply hash the key, and write the key to the correct IP address
-# If the IP address is the current one, we store it
-# Otherwise, we forward the message to the correct IP address
+# TODO
 @app.route("/kvs/keys/<string:key>", methods=["PUT"])
 def put_key(key):
     # Try reading the data. If theres an error, return error message
@@ -110,20 +86,7 @@ def put_key(key):
         return resp.content, resp.status_code
 
 
-# To get an existing key named sampleKey, send a GET request to /kvs/keys/sampleKey.
-
-#     If the key, sampleKey, does not exist, the key-value store should respond with status code 404 and the JSON: {"doesExist":false,"error":"Key does not exist","message":"Error in GET"}
-
-#     On success, assuming the current value of sampleKey is sampleValue, the key-value store should respond with status code 200 and JSON: {"doesExist":true,"message":"Retrieved successfully","value":"sampleValue"}
-
-# Returns
-# {
-#     "doesExist":
-#     "error":
-#     "message":
-# }
-
-
+# TODO
 @app.route("/kvs/keys/<string:key>", methods=["GET"])
 def get_key(key):
     IP_to_GET = get_shard_for_key(key, VIEW)
@@ -151,19 +114,7 @@ def get_key(key):
         return r.content, r.status_code
 
 
-# To delete an existing key named sampleKey, send a DELETE request to /kvs/keys/sampleKey.
-
-#     If the key, sampleKey, does not exist, the key-value store should respond with status code 404 and JSON: {"doesExist":false,"error":"Key does not exist","message":"Error in DELETE"}
-
-#     On success, the key-value store should respond with status code 200 and JSON: {"doesExist":true,"message":"Deleted successfully","address":"10.10.0.5:13800"}. This example assumes the receiving node (node1) does not have address "10.10.0.5:13800" and it acted as a proxy to the node (node2) with that address.
-
-# Returns
-# {
-#     "doesExist":
-#     "error":
-#     "message":
-#     "address":
-# }
+# optional TODO
 @app.route("/kvs/keys/<string:key>", methods=["DELETE"])
 def delete_key(key):
     IP_to_DELETE = get_shard_for_key(key, VIEW)
@@ -196,15 +147,7 @@ def delete_key(key):
     }, 500
 
 
-# To get the number of keys stored by a node, send a GET request to the endpoint, /kvs/key-count at any node.
-
-# On success, the response should have status code 200 and JSON: {"message":"Key count retrieved successfully","key-count":<key-count>}.
-
-# Returns
-# {
-#     "message":
-#     "key-count":
-# }
+# TODO
 @app.route("/kvs/key-count", methods=["GET"])
 def get_key_count():
     key_count = len(kvs)
@@ -214,6 +157,7 @@ def get_key_count():
     }, 200
 
 
+# TODO part of view change
 def rehash_keys():
     global kvs
     keys_to_delete = []
@@ -232,25 +176,7 @@ def rehash_keys():
     return "Success"
 
 
-# To change the view, or add a new node to the key-value store, send a PUT request to the endpoint, /kvs/view-change, with a JSON payload containing the list of addresses in the new view. For example, the JSON payload to add node3, with IP address 10.10.0.6:13800, to a view containing node1 and node2 would be: {"view":"10.10.0.4:13800,10.10.0.5:13800,10.10.0.6:13800"}.
-
-# View change request can be sent to any of the existing nodes.
-
-# A view change requires two operations:
-
-#     Propagating the view update to every node
-
-#     Reshard of the keys (a re-partition of keys across nodes)
-
-# On success, the response should have status code 200 and JSON: JSON { "message": "View change successful", "shards" : [ { "address": "10.10.0.4:13800", "key-count": 5 }, { "address": "10.10.0.5:13800", "key-count": 3 }, { "address": "10.10.0.6:13800", "key-count": 6 } ] } where each element in the "shards" list is a dictionary with two key-value pairs: the "address" key maps to the IP address of a node storing a shard, and the "key-count" key maps to the number of keys that are assigned to that node. For the above example, the node at address "10.10.0.6:13800" has 6 key-value pairs, meaning that after the view-change, 6 of the 14 keys in the key-value store were re-partitioned into the shard stored on node3.
-
-# Your team have enough time (6 sec) to finish this request.
-
-# Returns
-# {
-#     "message":
-#     "shards": [{"address": , "key-count": }]
-# }
+# TODO
 @app.route("/kvs/view-change", methods=["PUT"])
 def perform_view_change():
     global VIEW
@@ -299,26 +225,13 @@ def add_data_for_internel_request(data):
     return r
 
 
-# Example of preparing data for internal communication
-# def sendInternalData(data):
-# internalPayload = addDataForInternalReq(retquest.data)
-# r = requests.put('http://' + FORWARDING_ADDRESS + '/kvs/' + key,
-#         headers = HEADER, data = internalPayload, timeout = 6)
-#         ...
-
-
-# Returns the IP address of the shard that should hold a given key
-# Takes in the key to be hashed and the view
-# Assumes VIEW contains ADDRESS (address of self)
-# eg get_shard_for_key("foo", VIEW) -> 10.10.0.3:13800
+# returns the shard ID for the given key
 def get_shard_for_key(key, view):
-    view_copy = copy.deepcopy(view)
-    view_copy.sort()
     # hash key
     hashed_key = hash(key)
     # take mod length(view)
-    view_index = hashed_key % len(view)
-    return view_copy[view_index]
+    view_index = hashed_key % (len(view) - 1)
+    return str(view_index)
 
 
 if __name__ == "__main__":
