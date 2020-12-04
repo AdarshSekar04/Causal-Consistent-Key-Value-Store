@@ -51,41 +51,47 @@ VECTOR_CLOCK = {}
 # ----------------------END SETUP------------------------
 #########################################################
 
-# TODO task 1
+# TODO task 1 logically sound but needs testing
 @app.route("/kvs/keys/<string:key>", methods=["GET"])
 def get_key(key):
-    IP_to_GET = get_shard_for_key(key, VIEW)
-    if IP_to_GET == ADDRESS:
+    shard_ID = get_shard_for_key(key, VIEW)
+    ip_list = VIEW[shard_ID]
+    if ADDRESS in ip_list:
         if key not in kvs:
             return {
                 "doesExist": False,
                 "error": "Key does not exist",
                 "message": "Error in GET",
+                "causal-context": json.dumps(VECTOR_CLOCK),
             }, 404
         else:
             return {
                 "doesExist": True,
                 "message": "Retrieved successfully",
                 "value": "%s" % (kvs[key]),
+                "causal-context": json.dumps(VECTOR_CLOCK),
             }, 200
     else:
         try:
-            r = requests.get(f"http://{IP_to_GET}/kvs/keys/{key}")
+            for ip in ip_list:
+                r = requests.get(f"http://{ip}/kvs/keys/{key}")
+                return r.content, r.status_code
         except:
             return {
                 "error": "Unable to connect to shard",
                 "message": "Error in GET",
+                "causal-context": json.dumps(VECTOR_CLOCK),
             }, 503
-        return r.content, r.status_code
 
 
-# TODO task 1
+# TODO task 1 logically sound but needs testing
 @app.route("/kvs/key-count", methods=["GET"])
 def get_key_count():
     key_count = len(kvs)
     return {
         "message": "Key count retrieved successfully",
         "key-count": str(key_count),
+        "shard-id": get_my_shard_id(),
     }, 200
 
 
@@ -237,6 +243,13 @@ def get_shard_for_key(key, view):
     # take mod length(view)
     view_index = hashed_key % (len(view) - 1)
     return str(view_index)
+
+
+# returns the shard ID of the current node
+def get_my_shard_id():
+    for key in VIEW:
+        if ADDRESS in VIEW[key]:
+            return key
 
 
 if __name__ == "__main__":
