@@ -21,6 +21,7 @@ primary = False
 # ----------------------BEGIN SETUP----------------------
 os.environ["PYTHONHASHSEED"] = "0"
 
+
 try:
     view_string = os.environ["VIEW"]
     nodes = view_string.split(",")  # Creates the list of nodes in the current View
@@ -133,12 +134,35 @@ def put_key(key):
 # TODO task 3
 @app.route("/kvs/shards", methods=["GET"])
 def get_shards():
-    return
+    shards = []
+    for key in VIEW:
+        shards.append(str(key))
+    return {
+           "message"       : "Shard membership retrieved successfully",
+           "shards"        : shards
+        }, 200
 
 
 # TODO task 3
 @app.route("/kvs/shards/<string:id>", methods=["GET"])
 def get_shard_by_id(id):
+    if id == get_my_shard_id(): 
+        return {
+           "message"       : "Shard information retrieved successfully",
+           "shard-id"      : id,
+           "key-count"     : len(kvs),
+           "replicas"      : VIEW[id]
+        }, 200
+    else:
+        if id in VIEW:
+            resp = requests.get(f"http://{VIEW[id][0]}/kvs/shards/{id}", data=request.data)
+            return resp.content, resp.status_code
+        else:
+            return {
+                "error": "Shard id does not exist",
+                "message": "Error in GET",
+                "causal-context": json.dumps(VECTOR_CLOCK),
+            }, 404
     return
 
 
