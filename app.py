@@ -105,45 +105,38 @@ def get_key_count():
 # we will have to enforce a total order over those requests. Can do Leader Election.
 @app.route("/kvs/keys/<string:key>", methods=["PUT"])
 def put_key(key):
-    # Try reading the data. If theres an error, return error message
-    data = json.loads(request.get_data())
-    try:
-        val = data["value"]
-    except ValueError:
-        return {"message": "Error in PUT", "error": "Value is missing", "causal-context": VECTOR_CLOCK}, 400
-    if len(val) > 50:
-        return {"message": "Error in PUT", "error": "Key is too long", "address": ADDRESS, "causal-context": VECTOR_CLOCK}, 400
-    #At this point, we have a valid put
-    shard_to_PUT = get_shard_for_key(key, VIEW)
-    curr_shard = get_my_shard_id
-    if shard_to_PUT == curr_shard: #or "internal" in data or broadcast in data:
-    	passed_VC = None
-    	if "causal-context" in data:
-    		passed_VC = data["causal-context"]
-        status_code = localStore(key, val, curr_shard, passed_VC)
-        #Now we've stored it locally, need to check if we need to broadcast
-        if "broadcast" not in data:
-        	broadcast_to_shard(key, value, curr_shard, VECTOR_CLOCK)
-        #
-        replaced = True
-        if status_code == 201:
-        	replaced = 201
-            return {
-                "message": "Added successfully",
-                "replaced": replaced,
-                "address": ADDRESS,
-                "causal-context"= VECTOR_CLOCK
-            }, status_code
-        return {
-            "message": "Updated successfully",
-            "replaced": replaced,
-            "causal-context": VECTOR_CLOCK
-        }, status_code
-    else:
-    	#Forward to some address in the different shard
-    	forward_IP = VIEW[shard_to_PUT][0]
-        resp = requests.put(f"http://{forward_IP}/kvs/keys/{key}", data=request.data)
-        return resp.content, resp.status_code
+	# Try reading the data. If theres an error, return error message
+	data = json.loads(request.get_data())
+	try:
+	    val = data["value"]
+	except KeyError:
+	    return {"message": "Error in PUT", "error": "Value is missing", "causal-context": VECTOR_CLOCK}, 400
+	if len(key) > 50:
+	    return {"message": "Error in PUT", "error": "Key is too long", "address": ADDRESS, "causal-context": VECTOR_CLOCK}, 400
+	#At this point, we have a valid put
+	shard_to_PUT = get_shard_for_key(key, VIEW)
+	curr_shard = get_my_shard_id()
+	if shard_to_PUT == curr_shard: #or "internal" in data or broadcast in data:
+		passed_VC = None
+		if "causal-context" in data:
+			passed_VC = data["causal-context"]
+		#end if
+		status_code = localStore(key, val, curr_shard, passed_VC)
+		#Now we've stored it locally, need to check if we need to broadcast
+		if "broadcast" not in data:
+			broadcast_to_shard(key, value, curr_shard, VECTOR_CLOCK)
+		#
+		replaced = True
+		if status_code == 201:
+			replaced = False
+			return {"message": "Added successfully", "replaced": replaced, "address": ADDRESS, "causal-context": VECTOR_CLOCK}, status_code
+		else:
+			return {"message": "Updated successfully", "replaced": replaced, "causal-context": VECTOR_CLOCK}, status_code
+	else:
+		#Forward to some address in the different shard
+		forward_IP = VIEW[shard_to_PUT][0]
+		resp = requests.put(f"http://{forward_IP}/kvs/keys/{key}", data=request.data)
+		return resp.content, resp.status_code
 
 
 # TODO task 3
@@ -189,7 +182,7 @@ def localStore(key, value, curr_shard, new_clock=None):
 		key_clock = kvs[key][1]
 		VECTOR_CLOCK[curr_shard] += 1 #Increment vector clock for shard
 		#This if checks for concurrent request cases
-		if key_clock == new_clock and new_clock is not None;
+		if key_clock == new_clock and new_clock is not None:
 			smaller = min(value, kvs[key][0]) #Select smaller string always
 			kvs[key] = smaller
 			return toReturn
