@@ -57,6 +57,12 @@ VECTOR_CLOCK = {}
 def get_key(key):
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
+    # stall if the vector clock for the key is > local vector clock
+    data = json.loads(request.get_data())
+    if key in data["causal-context"]:
+        if data["causal-context"][key] > VECTOR_CLOCK[key]:
+            # TODO stall until VECTOR_CLOCK[key] >= data["causal-context"][key]
+            return
     if ADDRESS in ip_list:
         if key not in kvs:
             return {
