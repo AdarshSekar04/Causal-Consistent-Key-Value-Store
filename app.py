@@ -134,7 +134,7 @@ def put_key(key):
 		status_code = localStore(key, val, curr_shard, passed_VC)
 		#Now we've stored it locally, need to check if we need to broadcast
 		if "broadcast" not in data:
-			broadcast_to_shard(key, value, curr_shard, VECTOR_CLOCK)
+			broadcast_to_shard(key, val, curr_shard, VECTOR_CLOCK)
 		#
 		replaced = True
 		if status_code == 201:
