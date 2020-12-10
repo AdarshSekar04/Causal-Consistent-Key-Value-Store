@@ -186,18 +186,32 @@ def get_shard_by_id(id):
 #This function will store a key and value locally. Returns status code 200 if key was already in dictionary,
 #and 201 if key is new
 def localStore(key, value, curr_shard, new_clock=None):
-	toReturn = 201
-	if key in kvs:
-		toReturn = 200
-		key_clock = kvs[key][1]
-		VECTOR_CLOCK[curr_shard] += 1 #Increment vector clock for shard
-		#This if checks for concurrent request cases
-		if key_clock == new_clock and new_clock is not None:
-			smaller = min(value, kvs[key][0]) #Select smaller string always
-			kvs[key] = smaller
-			return toReturn
-	kvs[key] = value
-	return toReturn
+    toReturn = 201
+    if key in kvs:
+        toReturn = 200
+        key_clock = VECTOR_CLOCK[key]
+        VECTOR_CLOCK[key] += 1 #Increment vector clock for shard
+		#This if checks if there was a clock sent
+        if new_clock is not None:
+            #If we are given a clock as part of the request (causal context), we compare the context to out own clock for that key
+            #If our clock is the same as the causal context that was sent, then we were sent a concurrent request
+            #So, we take the minimum value for the key, to break the tie
+            if key in new_clock:
+                new_VC = new_clock[key]
+                if new_VC == key_clock:
+                    smaller = min(value, kvs[key]) #Select smaller string always
+                    kvs[key] = smaller    
+                    return toReturn
+                #In case of receiving a request with a lower VC, don't change current key value, and just return
+                elif new_VC < key_clock:
+                    return toReturn
+
+    #Otherwise, if the key was not in our dictionary or the clocks for the key didn't match
+    kvs[key] = value
+    #If this is the first time seeing the key, set a value for it
+    if toReturn == 201:
+        VECTOR_CLOCK[key] = 1
+    return toReturn
 
 #This function will broadcast the request to the entire shard. 
 def broadcast_to_shard(key, value, shard_ID, new_clock):
