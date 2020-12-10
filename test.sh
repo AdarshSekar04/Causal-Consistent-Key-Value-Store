@@ -73,6 +73,29 @@ getTest(){
        --write-out "%{http_code}\n"                           \
        --data      '{"causal-context":{}}' \
        http://127.0.0.1:13800/kvs/keys/sampleKey
+    echo "Testing that all nodes in the same shard have the same value"
+    echo "Testing shard 1"
+    curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       --data      '{"causal-context":{}}' \
+       http://127.0.0.1:13800/kvs/keys/sampleKey
+    curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       --data      '{"causal-context":{}}' \
+       http://127.0.0.1:13801/kvs/keys/sampleKey
+    echo "Testing shard 2"
+    curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       --data      '{"causal-context":{}}' \
+       http://127.0.0.1:13802/kvs/keys/sampleKey
+    curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       --data      '{"causal-context":{}}' \
+       http://127.0.0.1:13803/kvs/keys/sampleKey
     key_count_test
     get_shard_test
 }
