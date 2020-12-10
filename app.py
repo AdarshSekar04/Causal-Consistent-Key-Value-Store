@@ -97,13 +97,13 @@ def get_key(key):
                                 "value": str(kvs[key]),
                                 "causal-context": json.dumps(VECTOR_CLOCK),
                             }, 200
-                else:
-                    return {
-                        "doesExist": True,
-                        "message": "Retrieved successfully",
-                        "value": str(kvs[key]),
-                        "causal-context": json.dumps(VECTOR_CLOCK),
-                    }, 200
+            
+            return {
+                "doesExist": True,
+                "message": "Retrieved successfully",
+                "value": str(kvs[key]),
+                "causal-context": json.dumps(VECTOR_CLOCK),
+            }, 200
 
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
