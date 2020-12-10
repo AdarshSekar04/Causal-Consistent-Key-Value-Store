@@ -59,12 +59,6 @@ VIEW_CHANGE_IN_PROGRESS = False # Set to true while a view change is executing. 
 def get_key(key):
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
-    # stall if the vector clock for the key is > local vector clock
-    data = json.loads(request.get_data())
-    if key in data["causal-context"]:
-        if data["causal-context"][key] > VECTOR_CLOCK[key]:
-            # TODO stall until VECTOR_CLOCK[key] >= data["causal-context"][key]
-            return
     if ADDRESS in ip_list:
         if key not in kvs:
             return {
@@ -74,12 +68,35 @@ def get_key(key):
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 404
         else:
-            return {
-                "doesExist": True,
-                "message": "Retrieved successfully",
-                "value": "%s" % (kvs[key]),
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 200
+            # stall if the vector clock for the key is > local vector clock
+            data = json.loads(request.get_data())
+            if key in data["causal-context"]:
+                if data["causal-context"][key] > VECTOR_CLOCK[key]:
+                    # TODO reach out to all other nodes in the shard to try to update my vector clock
+                    shard_ID = get_my_shard_id()
+                    for node in VIEW[shard_ID]:
+                        r = requests.get(f"http://{node}/kvs/keys/{key}")
+                        if (
+                            r.json()["doesExist"]
+                            and (key in r.json()["causal-context"])
+                            and r.json()["causal-context"][key] > VECTOR_CLOCK[key]
+                        ):
+                            kvs[key] = r.json()["value"]
+                            VECTOR_CLOCK[key] = r.json()["causal-context"][key]
+                            return {
+                                "doesExist": True,
+                                "message": "Retrieved successfully",
+                                "value": "%s" % (kvs[key]),
+                                "causal-context": json.dumps(VECTOR_CLOCK),
+                            }, 200
+                else:
+                    return {
+                        "doesExist": True,
+                        "message": "Retrieved successfully",
+                        "value": "%s" % (kvs[key]),
+                        "causal-context": json.dumps(VECTOR_CLOCK),
+                    }, 200
+
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
         # Only returns error in the case that all nodes in the target replica are unreachable
@@ -93,7 +110,6 @@ def get_key(key):
                 "message": "Error in GET",
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 503
-
 
 # TODO task 1 logically sound but needs testing
 @app.route("/kvs/key-count", methods=["GET"])
