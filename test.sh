@@ -38,6 +38,23 @@ putTest(){
        http://127.0.0.1:13802/kvs/keys/sampleKey_2
 }
 
+
+key_count_test(){
+	echo "Testing GET key-count"
+	curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       http://127.0.0.1:13800/kvs/key-count
+}
+
+get_shard_test(){
+	echo "Testing GET shards"
+	curl --request   GET                                        \
+       --header    "Content-Type: application/json"           \
+       --write-out "%{http_code}\n"                           \
+       http://127.0.0.1:13800/kvs/shards
+}
+
 getTest(){
 	echo "============================================"
 	echo "Testing GET\n\n"
@@ -56,7 +73,8 @@ getTest(){
        --write-out "%{http_code}\n"                           \
        --data      '{"causal-context":{}}' \
        http://127.0.0.1:13800/kvs/keys/sampleKey
-
+    key_count_test
+    get_shard_test
 }
 
 #Tests concurrent PUTS, and PUTS and GETS together to check if we get expected values
