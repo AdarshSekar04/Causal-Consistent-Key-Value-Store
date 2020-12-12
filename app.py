@@ -435,7 +435,7 @@ def perform_view_change():
                     # Node isn't up, so move on to the next.
                     # Add logic here to ensure that each shard's data is retrieved at least once.
                    
-                    sys.stderr.write(f"Timeout error occured for address {address}")
+                    sys.stderr.write(f"Timeout error occured for address {address}. Node may not be available")
 
                 except Exception as inst:
                     sys.stderr.write(f"unknown error for address {address}, exception {inst}")
