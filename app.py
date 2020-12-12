@@ -66,6 +66,7 @@ def get_key(key):
                 "doesExist": False,
                 "error": "Key does not exist",
                 "message": "Error in GET",
+                "address": ADDRESS,
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 404
         else:
@@ -75,6 +76,7 @@ def get_key(key):
                     "doesExist": True,
                     "message": "Retrieved successfully",
                     "value": str(kvs[key]),
+                    "address": ADDRESS,
                     "causal-context": json.dumps(VECTOR_CLOCK),
                 }, 200
             # stall if the vector clock for the key is > local vector clock
@@ -96,29 +98,34 @@ def get_key(key):
                                 "doesExist": True,
                                 "message": "Retrieved successfully",
                                 "value": str(kvs[key]),
+                                "address": ADDRESS,
                                 "causal-context": json.dumps(VECTOR_CLOCK),
                             }, 200
-            
+
             return {
                 "doesExist": True,
                 "message": "Retrieved successfully",
                 "value": str(kvs[key]),
+                "address": ADDRESS,
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 200
 
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
         # Only returns error in the case that all nodes in the target replica are unreachable
-        try:
-            for ip in ip_list:
+
+        for ip in ip_list:
+            try:
                 r = requests.get(f"http://{ip}/kvs/keys/{key}")
                 return r.content, r.status_code
-        except:
-            return {
-                "error": "Unable to connect to shard",
-                "message": "Error in GET",
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 503
+            except:
+                continue
+
+        return {
+            "error": "Unable to connect to shard",
+            "message": "Error in GET",
+            "causal-context": json.dumps(VECTOR_CLOCK),
+        }, 503
 
 
 # TODO task 1 logically sound but needs testing
@@ -215,12 +222,12 @@ def get_shard_by_id(id):
     else:
         if id in VIEW:
             for node in VIEW[id]:
-                try: 
-                  resp = requests.get( 
-                      f"http://{node}/kvs/shards/{id}", data=request.data, timeout = 2
-                  )
+                try:
+                    resp = requests.get(
+                        f"http://{node}/kvs/shards/{id}", data=request.data, timeout=2
+                    )
                 except requests.exceptions.Timeout:
-                  continue
+                    continue
                 if resp.status_code == 200:
                     return resp.content, resp.status_code
             return {
@@ -235,6 +242,7 @@ def get_shard_by_id(id):
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 404
     return
+
 
 # This function will store a key and value locally. Returns status code 200 if key was already in dictionary,
 # and 201 if key is new
@@ -401,23 +409,29 @@ def perform_view_change():
                 try:
                     resp = requests.put(
                         f"http://{address}/kvs/view-change",
-                        data=json.dumps({"rebalance": True} ),
+                        data=json.dumps({"rebalance": True}),
                         timeout=0.01,
                     )
                     sys.stderr.write("resp completed")
                     resp_json_contents = json.loads(resp.content)
                     node_kvs = resp_json_contents["kvs"]
                     node_vector_clock = resp_json_contents["causal-context"]
-                    sys.stderr.write("Received data from {address}, kvs: {node_kvs}, vc {node_vector_clock}")
+                    sys.stderr.write(
+                        "Received data from {address}, kvs: {node_kvs}, vc {node_vector_clock}"
+                    )
                     for key in node_kvs:
-                        if key not in total_KVS :  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
+                        if (
+                            key not in total_KVS
+                        ):  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
                             total_KVS[key] = node_kvs[key]
                             total_vector_clock[key] = node_vector_clock[key]
                         else:  # Key is already in total kvs, compare vector clocks and add the most recent data. Then merge the vector clocks
                             vector_compare = compare_vector_clock(
                                 total_vector_clock[key], node_vector_clock[key]
                             )
-                            if vector_compare == -1:  # total_kvs needs to update its value
+                            if (
+                                vector_compare == -1
+                            ):  # total_kvs needs to update its value
                                 total_KVS[key] = node_kvs[key]
                             # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
                             if (
@@ -434,11 +448,13 @@ def perform_view_change():
                 except TimeoutError:
                     # Node isn't up, so move on to the next.
                     # Add logic here to ensure that each shard's data is retrieved at least once.
-                   
+
                     sys.stderr.write(f"Timeout error occured for address {address}")
 
                 except Exception as inst:
-                    sys.stderr.write(f"unknown error for address {address}, exception {inst}")
+                    sys.stderr.write(
+                        f"unknown error for address {address}, exception {inst}"
+                    )
 
     # return {"message": "created total_kvs", "total_KVS": total_KVS, "total_vector_clock": total_vector_clock}
 
@@ -529,10 +545,11 @@ def get_my_shard_id():
 def compare_vector_clock(vc1, vc2):
     if vc1 == vc2:
         return 0
-    if vc2<vc1:
+    if vc2 < vc1:
         return 1
-    if vc1<vc2:
+    if vc1 < vc2:
         return -1
+
 
 # returns the pairwise maximum between each element of vector1 and vector2
 def merge_vector_clocks(vector1, vector2):
