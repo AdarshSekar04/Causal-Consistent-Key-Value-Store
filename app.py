@@ -372,14 +372,16 @@ def perform_view_change():
     # recieve data from request
     json_dict = json.loads(request.get_data())
 
+    global VIEW_CHANGE_IN_PROGRESS
+    VIEW_CHANGE_IN_PROGRESS = True
+
     if "rebalance" in json_dict:
-        global VIEW_CHANGE_IN_PROGRESS
-        VIEW_CHANGE_IN_PROGRESS = True
+        
 
         return {
-            message: "View change has begun, returning kvs and context",
-            kvs: kvs,
-            causal - context: VECTOR_CLOCK,
+            "message": "View change has begun, returning kvs and context",
+            "kvs": kvs,
+            "causal-context": VECTOR_CLOCK,
         }
 
     total_KVS = {}
@@ -399,18 +401,16 @@ def perform_view_change():
                 node_kvs = resp_contents["kvs"]
                 node_vector_clock = resp_contents["causal-context"]
                 for key in node_kvs:
-                    if (
-                        key not in total_KVS
-                    ):  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
+                    if key not in total_KVS :  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
                         total_KVS[key] = node_kvs[key]
                         total_vector_clock[key] = node_vector_clock[key]
                     else:  # Key is already in total kvs, compare vector clocks and add the most recent data. Then merge the vector clocks
                         vector_compare = compare_vector_clock(
-                            total_vector_clock, node_vector_clock[key]
+                            total_vector_clock[key], node_vector_clock[key]
                         )
                         if vector_compare == -1:  # total_kvs needs to update its value
                             total_KVS[key] = node_kvs[key]
-                        # if vector_compare == 1: # we already h    ave the must up to date value, so just merge vector clocks
+                        # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
                         if (
                             vector_compare == 0
                         ):  # keys are concurrent, to address this we will has the key and choose the lowest valued hash.
@@ -427,23 +427,23 @@ def perform_view_change():
                 # Add logic here to ensure that each shard's data is retrieved at least once.
                 print("Node %s error in retrieving kvs", node)
 
-        # return {"message": "made it here", "total_KVS": total_KVS, "total_vector_clock": total _vector_clock}
+    return {"message": "created total_kvs", "total_KVS": total_KVS, "total_vector_clock": total_vector_clock}
 
-    # Apply the new view to this node
+    # # Apply the new view to this node
 
-    view_string = json_dict["view"]
-    nodes = view_string.split(",")
+    # view_string = json_dict["view"]
+    # nodes = view_string.split(",")
 
-    REPL = int(json_dict["repl-factor"])
-    VIEW = {}
-    for i in range(len(nodes) // REPL):
-        VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
+    # REPL = int(json_dict["repl-factor"])
+    # VIEW = {}
+    # for i in range(len(nodes) // REPL):
+    #     VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
 
-    # assign the collected KVS to shards in new view to all nodes in new view.
-    shard_list = rehash_keys(total_KVS, len(nodes) // REPL)
+    # # assign the collected KVS to shards in new view to all nodes in new view.
+    # shard_list = rehash_keys(total_KVS, len(nodes) // REPL)
 
-    # Return success message
-    return {"message": "View change successful", "shards": shard_list}, 200
+    # # Return success message
+    # return {"message": "View change successful", "shards": shard_list}, 200
 
 
 # When a node receives a request to update their view, set global variables pertaining to view, kvs, and vector clock
@@ -514,53 +514,16 @@ def get_my_shard_id():
 # Compare 2 vector clocks vc1 and vc2
 # returns 0 if conccurrent, 1 if vc2 -> (happens before) v1 and -1 if vc1->vc2
 def compare_vector_clock(vc1, vc2):
-    # Check if vector clocks are same length
-    if len(vc1) != len(vc2):
-        # vector clock length do not match (bad)
-        # TODO handle this
-        return -2
-    compare_results = []
-    for i in range(len(vc1)):
-        if vc1[i] > vc2[i]:
-            compare_results.append(1)
-        elif vc2[i] > vc1[i]:
-            compare_results.append(-1)
-        else:
-            compare_results.append(0)
-        print(
-            "i %d, vc1[i]: %d, vc2[i]: %d, compare_result: %s"
-            % (i, vc1[i], vc2[i], compare_results)
-        )
-
-    vc2_before_vc1 = False
-    for i in compare_results:
-        if i == -1:
-            vc2_before_vc1 = False
-            break
-        if i == 1:
-            vc2_before_vc1 = True
-
-    vc1_before_vc2 = False
-
-    for i in compare_results:
-        if i == 1:
-            vc1_before_vc2 = False
-            break
-        if i == -1:
-            vc1_before_vc2 = True
-
-    if vc2_before_vc1:
+    if vc1 == vc2:
+        return 0
+    if vc2<vc1:
         return 1
-    if vc1_before_vc2:
+    if vc1<vc2:
         return -1
-
-    return 0
-
 
 # returns the pairwise maximum between each element of vector1 and vector2
 def merge_vector_clocks(vector1, vector2):
-    vector = [max(value) for value in zip(vector1, vector2)]
-    return vector
+    return max(vector1, vector2)
 
 
 # selects the value with the lowest hash value
