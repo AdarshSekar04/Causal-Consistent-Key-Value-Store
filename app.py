@@ -13,6 +13,7 @@ import logging
 
 import json
 import os
+import sys
 
 app = Flask(__name__)
 primary = False
@@ -385,8 +386,6 @@ def perform_view_change():
     VIEW_CHANGE_IN_PROGRESS = True
 
     if "rebalance" in json_dict:
-        
-
         return {
             "message": "View change has begun, returning kvs and context",
             "kvs": kvs,
@@ -396,63 +395,68 @@ def perform_view_change():
     total_KVS = {}
     total_vector_clock = {}
     # Retrieve the KVS of each node in current view
-    for node in VIEW:
-        if node != ADDRESS:
-            try:
-                resp = requests.put(
-                    f"http://{node}/kvs/view-change",
-                    data=json.dumps(
-                        {"view": json_dict["view"].split(","), "rebalance": True},
+    for shard_num in VIEW:
+        for address in VIEW[shard_num]:
+            if address != ADDRESS:
+                try:
+                    resp = requests.put(
+                        f"http://{address}/kvs/view-change",
+                        data=json.dumps({"rebalance": True} ),
                         timeout=0.01,
-                    ),
-                )
-                resp_contents = json.loads(resp.content)
-                node_kvs = resp_contents["kvs"]
-                node_vector_clock = resp_contents["causal-context"]
-                for key in node_kvs:
-                    if key not in total_KVS :  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
-                        total_KVS[key] = node_kvs[key]
-                        total_vector_clock[key] = node_vector_clock[key]
-                    else:  # Key is already in total kvs, compare vector clocks and add the most recent data. Then merge the vector clocks
-                        vector_compare = compare_vector_clock(
-                            total_vector_clock[key], node_vector_clock[key]
-                        )
-                        if vector_compare == -1:  # total_kvs needs to update its value
+                    )
+                    sys.stderr.write("resp completed")
+                    resp_json_contents = json.loads(resp.content)
+                    node_kvs = resp_json_contents["kvs"]
+                    node_vector_clock = resp_json_contents["causal-context"]
+                    sys.stderr.write("Received data from {address}, kvs: {node_kvs}, vc {node_vector_clock}")
+                    for key in node_kvs:
+                        if key not in total_KVS :  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
                             total_KVS[key] = node_kvs[key]
-                        # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
-                        if (
-                            vector_compare == 0
-                        ):  # keys are concurrent, to address this we will has the key and choose the lowest valued hash.
-                            total_KVS[key] = choose_concurrent_value(
-                                total_KVS[key], node_kvs[key]
+                            total_vector_clock[key] = node_vector_clock[key]
+                        else:  # Key is already in total kvs, compare vector clocks and add the most recent data. Then merge the vector clocks
+                            vector_compare = compare_vector_clock(
+                                total_vector_clock[key], node_vector_clock[key]
                             )
-                        # in all cases, merge the two vector clocks
-                        total_vector_clock[key] = merge_vector_clocks(
-                            total_vector_clock[key], total_vector_clock[key]
-                        )
+                            if vector_compare == -1:  # total_kvs needs to update its value
+                                total_KVS[key] = node_kvs[key]
+                            # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
+                            if (
+                                vector_compare == 0
+                            ):  # keys are concurrent, to address this we will has the key and choose the lowest valued hash.
+                                total_KVS[key] = choose_concurrent_value(
+                                    total_KVS[key], node_kvs[key]
+                                )
+                            # in all cases, merge the two vector clocks
+                            total_vector_clock[key] = merge_vector_clocks(
+                                total_vector_clock[key], total_vector_clock[key]
+                            )
 
-            except:
-                # Node isn't up, so move on to the next.
-                # Add logic here to ensure that each shard's data is retrieved at least once.
-                print("Node %s error in retrieving kvs", node)
+                except TimeoutError:
+                    # Node isn't up, so move on to the next.
+                    # Add logic here to ensure that each shard's data is retrieved at least once.
+                   
+                    sys.stderr.write(f"Timeout error occured for address {address}")
 
-    return {"message": "created total_kvs", "total_KVS": total_KVS, "total_vector_clock": total_vector_clock}
+                except Exception as inst:
+                    sys.stderr.write(f"unknown error for address {address}, exception {inst}")
 
-    # # Apply the new view to this node
+    # return {"message": "created total_kvs", "total_KVS": total_KVS, "total_vector_clock": total_vector_clock}
 
-    # view_string = json_dict["view"]
-    # nodes = view_string.split(",")
+    # Apply the new view to this node
 
-    # REPL = int(json_dict["repl-factor"])
-    # VIEW = {}
-    # for i in range(len(nodes) // REPL):
-    #     VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
+    view_string = json_dict["view"]
+    nodes = view_string.split(",")
 
-    # # assign the collected KVS to shards in new view to all nodes in new view.
-    # shard_list = rehash_keys(total_KVS, len(nodes) // REPL)
+    REPL = int(json_dict["repl-factor"])
+    VIEW = {}
+    for i in range(len(nodes) // REPL):
+        VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
 
-    # # Return success message
-    # return {"message": "View change successful", "shards": shard_list}, 200
+    # assign the collected KVS to shards in new view to all nodes in new view.
+    shard_list = rehash_keys(total_KVS, len(nodes) // REPL)
+
+    # Return success message
+    return {"message": "View change successful", "shards": shard_list}, 200
 
 
 # When a node receives a request to update their view, set global variables pertaining to view, kvs, and vector clock
