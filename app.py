@@ -213,10 +213,20 @@ def get_shard_by_id(id):
         }, 200
     else:
         if id in VIEW:
-            resp = requests.get(
-                f"http://{VIEW[id][0]}/kvs/shards/{id}", data=request.data
-            )
-            return resp.content, resp.status_code
+            for node in VIEW[id]:
+                try: 
+                  resp = requests.get( 
+                      f"http://{node}/kvs/shards/{id}", data=request.data, timeout = 2
+                  )
+                except requests.exceptions.Timeout:
+                  continue
+                if resp.status_code == 200:
+                    return resp.content, resp.status_code
+            return {
+                "error": "Unable to reach any node in shard",
+                "message": "Error in GET",
+                "causal-context": json.dumps(VECTOR_CLOCK),
+            }, 500
         else:
             return {
                 "error": "Shard id does not exist",
@@ -224,7 +234,6 @@ def get_shard_by_id(id):
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 404
     return
-
 
 # This function will store a key and value locally. Returns status code 200 if key was already in dictionary,
 # and 201 if key is new
