@@ -89,19 +89,29 @@ def get_key(key):
         ):  # check that there is no causal context for the key
             # there is no causal history
             if key not in kvs:
-                return json.dumps({
-                    "doesExist": False,
-                    "error": "Key does not exist",
-                    "message": "Error in GET",
-                    "causal-context": VECTOR_CLOCK,
-                }), 404
+                return (
+                    json.dumps(
+                        {
+                            "doesExist": False,
+                            "error": "Key does not exist",
+                            "message": "Error in GET",
+                            "causal-context": VECTOR_CLOCK,
+                        }
+                    ),
+                    404,
+                )
             else:
-                return json.dumps({
-                    "doesExist": True,
-                    "message": "Retrieved successfully",
-                    "value": str(kvs[key]),
-                    "causal-context": VECTOR_CLOCK,
-                }), 200
+                return (
+                    json.dumps(
+                        {
+                            "doesExist": True,
+                            "message": "Retrieved successfully",
+                            "value": str(kvs[key]),
+                            "causal-context": VECTOR_CLOCK,
+                        }
+                    ),
+                    200,
+                )
 
         else:
             # if there is causal history
@@ -124,25 +134,35 @@ def get_key(key):
                         ):
                             kvs[key] = r.json()["value"]
                             VECTOR_CLOCK[key] = r.json()["causal-context"][key]
-                            return json.dumps({
-                                "doesExist": True,
-                                "message": "Retrieved successfully",
-                                "value": str(kvs[key]),
-                                "address": node,
-                                "causal-context": VECTOR_CLOCK,
-                            }), 200
+                            return (
+                                json.dumps(
+                                    {
+                                        "doesExist": True,
+                                        "message": "Retrieved successfully",
+                                        "value": str(kvs[key]),
+                                        "address": node,
+                                        "causal-context": VECTOR_CLOCK,
+                                    }
+                                ),
+                                200,
+                            )
                     # we can't service you
                     return {
                         "error": "Unable to satisfy request",
                         "message": "Error in GET",
                     }
 
-            return json.dumps({
-                "doesExist": True,
-                "message": "Retrieved successfully",
-                "value": str(kvs[key]),
-                "causal-context": VECTOR_CLOCK,
-            }), 200
+            return (
+                json.dumps(
+                    {
+                        "doesExist": True,
+                        "message": "Retrieved successfully",
+                        "value": str(kvs[key]),
+                        "causal-context": VECTOR_CLOCK,
+                    }
+                ),
+                200,
+            )
 
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
@@ -155,11 +175,16 @@ def get_key(key):
             except:
                 continue
 
-        return json.dumps({
-            "error": "Unable to connect to shard",
-            "message": "Error in GET",
-            "causal-context": VECTOR_CLOCK,
-        }), 503
+        return (
+            json.dumps(
+                {
+                    "error": "Unable to connect to shard",
+                    "message": "Error in GET",
+                    "causal-context": VECTOR_CLOCK,
+                }
+            ),
+            503,
+        )
 
 
 # TODO task 1 logically sound but needs testing
@@ -253,17 +278,33 @@ def put_key(key):
         forwarded = None
         for address in forward_IPS:
             try:
-                resp = requests.put(f"http://{address}/kvs/keys/{key}", data=request.data)
+                resp = requests.put(
+                    f"http://{address}/kvs/keys/{key}", data=request.data
+                )
                 success = True
                 forwarded = address
                 break
             except requests.exceptions.Timeout:
                 continue
         if success == False:
-            return(json.dumps({"error":"Unable to satisfy request","message":"Error in PUT"}), 400)
+            return (
+                json.dumps(
+                    {"error": "Unable to satisfy request", "message": "Error in PUT"}
+                ),
+                400,
+            )
         forwarded_data = json.loads(resp.content)
-        return (json.dumps({"message": forwarded_data["message"], "replaced": forwarded_data["replaced"], "address": forwarded, "causal-context": forwarded_data["causal-context"]}), resp.status_code)
-
+        return (
+            json.dumps(
+                {
+                    "message": forwarded_data["message"],
+                    "replaced": forwarded_data["replaced"],
+                    "address": forwarded,
+                    "causal-context": forwarded_data["causal-context"],
+                }
+            ),
+            resp.status_code,
+        )
 
 
 # TODO task 3
@@ -296,17 +337,27 @@ def get_shard_by_id(id):
                     continue
                 if resp.status_code == 200:
                     return resp.content, resp.status_code
-            return json.dumps({
-                "error": "Unable to reach any node in shard",
-                "message": "Error in GET",
-                "causal-context": VECTOR_CLOCK,
-            }), 500
+            return (
+                json.dumps(
+                    {
+                        "error": "Unable to reach any node in shard",
+                        "message": "Error in GET",
+                        "causal-context": VECTOR_CLOCK,
+                    }
+                ),
+                500,
+            )
         else:
-            return json.dumps({
-                "error": "Shard id does not exist",
-                "message": "Error in GET",
-                "causal-context": VECTOR_CLOCK,
-            }), 404
+            return (
+                json.dumps(
+                    {
+                        "error": "Shard id does not exist",
+                        "message": "Error in GET",
+                        "causal-context": VECTOR_CLOCK,
+                    }
+                ),
+                404,
+            )
     return
 
 
@@ -353,10 +404,11 @@ def broadcast_to_shard(key, value, shard_ID, new_clock):
                 f"http://{address}/kvs/keys/{key}",
                 data=json.dumps(
                     {"value": value, "causal-context": VECTOR_CLOCK, "broadcast": True}
-                ), timeout=2
+                ),
+                timeout=2,
             )
         except requests.exceptions.Timeout:
-                continue
+            continue
 
 
 # TODO task 4
@@ -375,7 +427,9 @@ def rehash_keys(total_KVS, num_shards):
     for key in total_KVS:
         shard_num = get_shard_for_key(key, VIEW)
         kvs_set[str(shard_num)][key] = total_KVS[key]
-        vc_set[str(shard_num)][key] = 0  # init vector clock  0's because we don't have to preserve causality between view changes
+        vc_set[str(shard_num)][
+            key
+        ] = 0  # init vector clock  0's because we don't have to preserve causality between view changes
 
     for shard_num in VIEW:
         for address in VIEW[shard_num]:
@@ -461,11 +515,13 @@ def perform_view_change():
     VIEW_CHANGE_IN_PROGRESS = True
 
     if "rebalance" in json_dict:
-        return json.dumps({
-            "message": "View change has begun, returning kvs and context",
-            "kvs": kvs,
-            "causal-context": VECTOR_CLOCK,
-        })
+        return json.dumps(
+            {
+                "message": "View change has begun, returning kvs and context",
+                "kvs": kvs,
+                "causal-context": VECTOR_CLOCK,
+            }
+        )
 
     total_KVS = {}
     total_vector_clock = {}
