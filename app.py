@@ -560,7 +560,7 @@ def gossip():
             "error": "kvs and context required to gossip: Method %s, View %s,"
             % (request.method, json.dumps(VIEW))
         }, 503
-    if set(json_dict["gossiped"]) == set(VIEW[get_my_shard_id]):
+    if set(json_dict["gossiped"]) == set(VIEW[get_my_shard_id()]):
         return {
             "message": "Gossip completed, all nodes should have the same kvs and causal-context",
             "kvs": kvs,
@@ -572,10 +572,7 @@ def gossip():
     their_vc = json_dict["causal-context"]
     mergedKVS, mergedVC = merge_kvs(kvs, their_kvs, VECTOR_CLOCK, their_vc)
     mergedGossiped = json_dict["gossiped"].append(ADDRESS)
-
-    print("nextGossip:" + nextGossip)
-    print("mergedKVS:" + mergedKVS)
-    print("mergedVC:" + mergedVC)
+    
     resp = requests.put(
         f"http://{nextGossip}/kvs/gossip",
         data=json.dumps(
@@ -616,7 +613,14 @@ def compare_vector_clock(vc1, vc2):
 
 # returns the pairwise maximum between each element of vector1 and vector2
 def merge_vector_clocks(vector1, vector2):
-    return max(vector1, vector2)
+    list_of_keys = list(vector1.keys()) + list(vector2.keys())
+    set_of_keys = set(list_of_keys)
+    for key in set_of_keys:
+        if key in vector1 and key in vector2:
+            vector1[key] = max(vector1[key], vector2[key])
+        elif key in vector2:
+            vector1[key] = vector2[key]
+    return vector1
 
 
 # selects the value with the lowest hash value
