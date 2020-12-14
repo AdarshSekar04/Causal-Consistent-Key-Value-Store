@@ -114,6 +114,8 @@ def get_key(key):
                     # reach out to all other nodes in the shard to try to update my vector clock
                     shard_ID = get_my_shard_id()
                     for node in VIEW[shard_ID]:
+                        if ADDRESS == node:
+                            continue
                         r = requests.get(f"http://{node}/kvs/keys/{key}", timeout=2)
                         if (
                             r.json()["doesExist"]
@@ -166,7 +168,7 @@ def get_key_count():
     key_count = len(kvs)
     return {
         "message": "Key count retrieved successfully",
-        "key-count": str(key_count),
+        "key-count": key_count,
         "shard-id": get_my_shard_id(),
     }, 200
 
