@@ -17,7 +17,6 @@ import sys
 
 from time import sleep
 import threading
-import random
 
 app = Flask(__name__)
 primary = False
@@ -56,8 +55,6 @@ VECTOR_CLOCK = {}
 
 VIEW_CHANGE_IN_PROGRESS = False  # Set to true while a view change is executing. While this is true, read/writes may not be correct
 
-WAIT_SECONDS_BASE = 2
-
 
 def gossiper():
     global kvs
@@ -71,12 +68,13 @@ def gossiper():
                 resp = requests.put(
                     f"http://{address}/kvs/gossip",
                     data=json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}),
+                    timeout=0.5
                 )
                 kvs = resp.json()["kvs"]
                 VECTOR_CLOCK = resp.json()["causal-context"]
             except:
                 logging.warning("Attempting to connect to: " + address)
-        sleep(WAIT_SECONDS_BASE + random.randint(1, 4))
+        sleep(1)
 
 
 # ----------------------END SETUP------------------------
