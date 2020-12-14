@@ -730,7 +730,7 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             if compare_vector_clock(vc1[key], vc2[key]) == -1:
                 mergedKVS[key] = kvs2[key]
             elif compare_vector_clock(vc1[key], vc2[key]) == 1:
-                mergedKVS[key] = kvs2[key]
+                mergedKVS[key] = kvs1[key]
             else:
                 mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
     for key in kvs2:
@@ -740,7 +740,7 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             if compare_vector_clock(vc1[key], vc2[key]) == 1:
                 mergedKVS[key] = kvs2[key]
             elif compare_vector_clock(vc1[key], vc2[key]) == -1:
-                mergedKVS[key] = kvs2[key]
+                mergedKVS[key] = kvs1[key]
             else:
                 mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
     mergedVC = merge_vector_clocks(vc1, vc2)
