@@ -72,7 +72,7 @@ def gossiper():
                 )
             except:
                 logging.warning("Attempting to connect to: " + address)
-        sleep(WAIT_SECONDS_BASE + random.randint(1, 5))
+        sleep(WAIT_SECONDS_BASE + random.randint(1, 4))
 
 
 # ----------------------END SETUP------------------------
@@ -171,7 +171,10 @@ def get_key(key):
         for ip in ip_list:
             try:
                 r = requests.get(f"http://{ip}/kvs/keys/{key}", timeout=2)
-                return r.content, r.status_code
+                if r.status_code == 200:
+                    response_json = r.json()
+                    response_json["address"] = ip
+                    return response_json, r.status_code
             except:
                 continue
 
@@ -450,7 +453,7 @@ def rehash_keys(total_KVS, num_shards):
     for shard_num in VIEW:
         shard_obj = {}
         shard_obj["shard-id"] = str(shard_num)
-        shard_obj["key_count"] = len(kvs_set[shard_num])
+        shard_obj["key-count"] = len(kvs_set[shard_num])
         shard_obj["replicas"] = []
         for address in VIEW[shard_num]:
             shard_obj["replicas"].append(str(address))
