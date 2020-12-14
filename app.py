@@ -61,19 +61,18 @@ WAIT_SECONDS_BASE = 2
 
 def gossiper():
     while True:
-        next_node = choose_next_node([ADDRESS])
-        try:
-            resp = requests.put(
-                f"http://{next_node}/kvs/gossip",
-                data=json.dumps(
-                    {"kvs": kvs, "causal-context": VECTOR_CLOCK, "gossiped": [ADDRESS]}
-                ),
-            )
-            logging.warning("GOSSIP IS RUNNING")
-        except:
-            logging.warning("Attempting to connect to: " + next_node)
+        list_of_addresses_in_shard = VIEW[get_my_shard_id()]
+        for address in list_of_addresses_in_shard:
+            if address == ADDRESS:
+                continue
+            try:
+                requests.put(
+                    f"http://{address}/kvs/gossip",
+                    data=json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}),
+                )
+            except:
+                logging.warning("Attempting to connect to: " + address)
         sleep(WAIT_SECONDS_BASE + random.randint(1, 5))
-    
 
 
 # ----------------------END SETUP------------------------
@@ -555,33 +554,15 @@ def gossip():
     global kvs
     global VECTOR_CLOCK
     json_dict = json.loads(request.get_data())
-    if "kvs" not in json_dict and "causal-context" not in json_dict:
-        return {
-            "error": "kvs and context required to gossip: Method %s, View %s,"
-            % (request.method, json.dumps(VIEW))
-        }, 503
-    if set(json_dict["gossiped"]) == set(VIEW[get_my_shard_id()]):
-        return {
-            "message": "Gossip completed, all nodes should have the same kvs and causal-context",
-            "kvs": kvs,
-            "causal-context": VECTOR_CLOCK,
-        }, 204
 
-    nextGossip = choose_next_node(json_dict["gossiped"])
     their_kvs = json_dict["kvs"]
     their_vc = json_dict["causal-context"]
     mergedKVS, mergedVC = merge_kvs(kvs, their_kvs, VECTOR_CLOCK, their_vc)
-    mergedGossiped = json_dict["gossiped"].append(ADDRESS)
+
+    kvs = copy.deepcopy(mergedKVS)
+    VECTOR_CLOCK = copy.deepcopy(mergedVC)
     
-    resp = requests.put(
-        f"http://{nextGossip}/kvs/gossip",
-        data=json.dumps(
-            {"kvs": mergedKVS, "causal-context": mergedVC, "gossiped": mergedGossiped}
-        ),
-        timeout=2,
-    )
-    kvs = resp.data["kvs"]
-    return resp.content, resp.status_code
+    return "Success", 200
 
 
 # returns the shard ID for the given key
@@ -667,4 +648,3 @@ if __name__ == "__main__":
     gossip_thread = threading.Thread(target=gossiper)
     gossip_thread.start()
     app.run(host="0.0.0.0", port=13800, debug=True)
-    
