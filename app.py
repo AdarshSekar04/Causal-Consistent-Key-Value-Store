@@ -15,7 +15,7 @@ import json
 import os
 import sys
 
-import time
+from time import sleep
 import threading
 import random
 
@@ -58,22 +58,23 @@ VIEW_CHANGE_IN_PROGRESS = False  # Set to true while a view change is executing.
 
 WAIT_SECONDS_BASE = 2
 
+
 def gossiper():
-    next_node = choose_next_node([ADDRESS])
-    try:
-        resp = requests.put(
-            f"http://{next_node}/kvs/gossip",
-            data=json.dumps(
-                {
-                  "kvs": kvs,
-                  "causal-context": VECTOR_CLOCK,
-                  "gossiped": [ADDRESS]
-                }
-            ),
-        )
-    except:
-        logging.warning("Attempting to connect to: " + next_node) 
-    threading.Timer(WAIT_SECONDS_BASE + random.randint(1, 5), gossiper).start()
+    while True:
+        next_node = choose_next_node([ADDRESS])
+        try:
+            resp = requests.put(
+                f"http://{next_node}/kvs/gossip",
+                data=json.dumps(
+                    {"kvs": kvs, "causal-context": VECTOR_CLOCK, "gossiped": [ADDRESS]}
+                ),
+            )
+            logging.warning("GOSSIP IS RUNNING")
+        except:
+            logging.warning("Attempting to connect to: " + next_node)
+        sleep(WAIT_SECONDS_BASE + random.randint(1, 5))
+    
+
 
 # ----------------------END SETUP------------------------
 #########################################################
@@ -471,9 +472,10 @@ def perform_view_change():
                 except TimeoutError:
                     # Node isn't up, so move on to the next.
                     # Add logic here to ensure that each shard's data is retrieved at least once.
-                   
-                    sys.stderr.write(f"Timeout error occured for address {address}. Node may not be available")
 
+                    sys.stderr.write(
+                        f"Timeout error occured for address {address}. Node may not be available"
+                    )
 
                 except Exception as inst:
                     sys.stderr.write(
@@ -547,6 +549,7 @@ def delete_key(key):
         % (request.method, request.full_path, key, json.dumps(VIEW))
     }, 500
 
+
 @app.route("/kvs/gossip", methods=["PUT"])
 def gossip():
     global kvs
@@ -561,8 +564,8 @@ def gossip():
         return {
             "message": "Gossip completed, all nodes should have the same kvs and causal-context",
             "kvs": kvs,
-            "causal-context": VECTOR_CLOCK
-        }, 204       
+            "causal-context": VECTOR_CLOCK,
+        }, 204
 
     nextGossip = choose_next_node(json_dict["gossiped"])
     their_kvs = json_dict["kvs"]
@@ -570,21 +573,19 @@ def gossip():
     mergedKVS, mergedVC = merge_kvs(kvs, their_kvs, VECTOR_CLOCK, their_vc)
     mergedGossiped = json_dict["gossiped"].append(ADDRESS)
 
-    print('nextGossip:' + nextGossip)
-    print('mergedKVS:' + mergedKVS)
-    print('mergedVC:' + mergedVC)
+    print("nextGossip:" + nextGossip)
+    print("mergedKVS:" + mergedKVS)
+    print("mergedVC:" + mergedVC)
     resp = requests.put(
         f"http://{nextGossip}/kvs/gossip",
         data=json.dumps(
-            {
-              "kvs": mergedKVS,
-              "causal-context": mergedVC,
-              "gossiped": mergedGossiped
-            }
-        ), timeout=2
+            {"kvs": mergedKVS, "causal-context": mergedVC, "gossiped": mergedGossiped}
+        ),
+        timeout=2,
     )
     kvs = resp.data["kvs"]
     return resp.content, resp.status_code
+
 
 # returns the shard ID for the given key
 def get_shard_for_key(key, view):
@@ -622,12 +623,14 @@ def merge_vector_clocks(vector1, vector2):
 def choose_concurrent_value(value1, value2):
     return value1 if hash(value1) < hash(value2) else value2
 
-# chooses next address 
+
+# chooses next address
 def choose_next_node(prev_nodes):
     for address in VIEW[get_my_shard_id()]:
-          if address not in prev_nodes:
-              return address
+        if address not in prev_nodes:
+            return address
     return -1
+
 
 # merges two KVS's based on Vector Clocks
 def merge_kvs(kvs1, kvs2, vc1, vc2):
@@ -651,11 +654,13 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             elif compare_vector_clock(vc1[key], vc2[key]) == -1:
                 mergedKVS[key] = kvs2[key]
             else:
-                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])         
+                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
     mergedVC = merge_vector_clocks(vc1, vc2)
     return (mergedKVS, mergedVC)
 
-gossiper()
 
 if __name__ == "__main__":
+    gossip_thread = threading.Thread(target=gossiper)
+    gossip_thread.start()
     app.run(host="0.0.0.0", port=13800, debug=True)
+    
