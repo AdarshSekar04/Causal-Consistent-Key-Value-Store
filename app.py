@@ -334,12 +334,15 @@ def broadcast_to_shard(key, value, shard_ID, new_clock):
         if address == ADDRESS:
             continue
         # Otherwise, forward message
-        resp = requests.put(
-            f"http://{address}/kvs/keys/{key}",
-            data=json.dumps(
-                {"value": value, "causal-context": VECTOR_CLOCK, "broadcast": True}
-            ),
-        )
+        try:
+            resp = requests.put(
+                f"http://{address}/kvs/keys/{key}",
+                data=json.dumps(
+                    {"value": value, "causal-context": VECTOR_CLOCK, "broadcast": True}
+                ), timeout=2
+            )
+        except requests.exceptions.Timeout:
+                continue
 
 
 # TODO task 4
