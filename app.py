@@ -176,18 +176,18 @@ def put_key(key):
     try:
         val = data["value"]
     except KeyError:
-        return {
+        return json.dumps({
             "message": "Error in PUT",
             "error": "Value is missing",
             "causal-context": VECTOR_CLOCK,
-        }, 400
+        }), 400
     if len(key) > 50:
-        return {
+        return json.dumps({
             "message": "Error in PUT",
             "error": "Key is too long",
             "address": ADDRESS,
             "causal-context": VECTOR_CLOCK,
-        }, 400
+        }), 400
     # At this point, we have a valid put
     shard_to_PUT = get_shard_for_key(key, VIEW)
     curr_shard = get_my_shard_id()
@@ -204,18 +204,18 @@ def put_key(key):
         replaced = True
         if status_code == 201:
             replaced = False
-            return {
+            return json.dumps({
                 "message": "Added successfully",
                 "replaced": replaced,
                 "address": ADDRESS,
                 "causal-context": VECTOR_CLOCK,
-            }, status_code
+            }), status_code
         else:
-            return {
+            return json.dumps({
                 "message": "Updated successfully",
                 "replaced": replaced,
                 "causal-context": VECTOR_CLOCK,
-            }, status_code
+            }), status_code
     else:
         # Forward to some address in the different shard
         forward_IP = VIEW[shard_to_PUT][0]
@@ -641,7 +641,7 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             else:
                 mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
     mergedVC = merge_vector_clocks(vc1, vc2)
-    return (mergedKVS, mergedVC)
+    return mergedKVS, mergedVC
 
 
 if __name__ == "__main__":
