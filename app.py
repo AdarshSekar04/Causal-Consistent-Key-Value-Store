@@ -363,9 +363,7 @@ def rehash_keys(total_KVS, num_shards):
     for key in total_KVS:
         shard_num = get_shard_for_key(key, VIEW)
         kvs_set[str(shard_num)][key] = total_KVS[key]
-        vc_set[str(shard_num)][key] = [0] * len(
-            nodes
-        )  # init vector clock to all 0's because we don't have to preserve causality between view changes
+        vc_set[str(shard_num)][key] = 0  # init vector clock  0's because we don't have to preserve causality between view changes
 
     for shard_num in VIEW:
         for address in VIEW[shard_num]:
@@ -454,7 +452,7 @@ def perform_view_change():
         return {
             "message": "View change has begun, returning kvs and context",
             "kvs": kvs,
-            "causal-context": VECTOR_CLOCK,
+            "causal-context": json.dumps(VECTOR_CLOCK),
         }
 
     total_KVS = {}
