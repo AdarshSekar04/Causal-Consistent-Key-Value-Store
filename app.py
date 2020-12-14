@@ -60,16 +60,20 @@ WAIT_SECONDS_BASE = 2
 
 
 def gossiper():
+    global kvs
+    global VECTOR_CLOCK
     while True:
         list_of_addresses_in_shard = VIEW[get_my_shard_id()]
         for address in list_of_addresses_in_shard:
             if address == ADDRESS:
                 continue
             try:
-                requests.put(
+                resp = requests.put(
                     f"http://{address}/kvs/gossip",
                     data=json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}),
                 )
+                kvs = resp.json()["kvs"]
+                VECTOR_CLOCK = resp.json()["causal-context"]
             except:
                 logging.warning("Attempting to connect to: " + address)
         sleep(WAIT_SECONDS_BASE + random.randint(1, 4))
@@ -665,7 +669,7 @@ def gossip():
     kvs = copy.deepcopy(mergedKVS)
     VECTOR_CLOCK = copy.deepcopy(mergedVC)
 
-    return "Success", 200
+    return json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK})
 
 
 # returns the shard ID for the given key
@@ -738,9 +742,9 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             mergedKVS[key] = kvs2[key]
         else:
             if compare_vector_clock(vc1[key], vc2[key]) == 1:
-                mergedKVS[key] = kvs2[key]
-            elif compare_vector_clock(vc1[key], vc2[key]) == -1:
                 mergedKVS[key] = kvs1[key]
+            elif compare_vector_clock(vc1[key], vc2[key]) == -1:
+                mergedKVS[key] = kvs2[key]
             else:
                 mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
     mergedVC = merge_vector_clocks(vc1, vc2)
