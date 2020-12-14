@@ -549,6 +549,8 @@ def delete_key(key):
 
 @app.route("/kvs/gossip", methods=["PUT"])
 def gossip():
+    global kvs
+    global VECTOR_CLOCK
     json_dict = json.loads(request.get_data())
     if "kvs" not in json_dict and "causal-context" not in json_dict:
         return {
@@ -559,7 +561,7 @@ def gossip():
         return {
             "message": "Gossip completed, all nodes should have the same kvs and causal-context",
             "kvs": kvs,
-            "causal-context": VECTOR_CLOCK,
+            "causal-context": VECTOR_CLOCK
         }, 204       
 
     nextGossip = choose_next_node(json_dict["gossiped"])
