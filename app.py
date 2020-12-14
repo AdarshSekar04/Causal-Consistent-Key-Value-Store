@@ -203,7 +203,6 @@ def put_key(key):
                 {
                     "message": "Error in PUT",
                     "error": "Key is too long",
-                    "address": ADDRESS,
                     "causal-context": VECTOR_CLOCK,
                 }
             ),
@@ -230,7 +229,6 @@ def put_key(key):
                     {
                         "message": "Added successfully",
                         "replaced": replaced,
-                        "address": ADDRESS,
                         "causal-context": VECTOR_CLOCK,
                     }
                 ),
