@@ -84,32 +84,37 @@ def get_key(key):
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
     if ADDRESS in ip_list:
-        if key not in kvs:
-            return {
-                "doesExist": False,
-                "error": "Key does not exist",
-                "message": "Error in GET",
-                "address": ADDRESS,
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 404
-        else:
-            if not request.get_data():
-                # there is no causal history
+        if (
+            not request.get_data() or key not in request.json["causal-context"]
+        ):  # check that there is no causal context for the key
+            # there is no causal history
+            if key not in kvs:
+                return {
+                    "doesExist": False,
+                    "error": "Key does not exist",
+                    "message": "Error in GET",
+                    "causal-context": json.dumps(VECTOR_CLOCK),
+                }, 404
+            else:
                 return {
                     "doesExist": True,
                     "message": "Retrieved successfully",
                     "value": str(kvs[key]),
-                    "address": ADDRESS,
                     "causal-context": json.dumps(VECTOR_CLOCK),
                 }, 200
+
+        else:
+            # if there is causal history
             # stall if the vector clock for the key is > local vector clock
             data = json.loads(request.get_data())
             if "causal-context" in data and key in data["causal-context"]:
-                if data["causal-context"][key] > VECTOR_CLOCK[key]:
+                if (key not in VECTOR_CLOCK) or data["causal-context"][
+                    key
+                ] > VECTOR_CLOCK[key]:
                     # reach out to all other nodes in the shard to try to update my vector clock
                     shard_ID = get_my_shard_id()
                     for node in VIEW[shard_ID]:
-                        r = requests.get(f"http://{node}/kvs/keys/{key}")
+                        r = requests.get(f"http://{node}/kvs/keys/{key}", timeout=2)
                         if (
                             r.json()["doesExist"]
                             and (key in r.json()["causal-context"])
@@ -121,15 +126,19 @@ def get_key(key):
                                 "doesExist": True,
                                 "message": "Retrieved successfully",
                                 "value": str(kvs[key]),
-                                "address": ADDRESS,
+                                "address": node,
                                 "causal-context": json.dumps(VECTOR_CLOCK),
                             }, 200
+                    # we can't service you
+                    return {
+                        "error": "Unable to satisfy request",
+                        "message": "Error in GET",
+                    }
 
             return {
                 "doesExist": True,
                 "message": "Retrieved successfully",
                 "value": str(kvs[key]),
-                "address": ADDRESS,
                 "causal-context": json.dumps(VECTOR_CLOCK),
             }, 200
 
@@ -139,7 +148,7 @@ def get_key(key):
 
         for ip in ip_list:
             try:
-                r = requests.get(f"http://{ip}/kvs/keys/{key}")
+                r = requests.get(f"http://{ip}/kvs/keys/{key}", timeout=2)
                 return r.content, r.status_code
             except:
                 continue
@@ -176,18 +185,28 @@ def put_key(key):
     try:
         val = data["value"]
     except KeyError:
-        return json.dumps({
-            "message": "Error in PUT",
-            "error": "Value is missing",
-            "causal-context": VECTOR_CLOCK,
-        }), 400
+        return (
+            json.dumps(
+                {
+                    "message": "Error in PUT",
+                    "error": "Value is missing",
+                    "causal-context": VECTOR_CLOCK,
+                }
+            ),
+            400,
+        )
     if len(key) > 50:
-        return json.dumps({
-            "message": "Error in PUT",
-            "error": "Key is too long",
-            "address": ADDRESS,
-            "causal-context": VECTOR_CLOCK,
-        }), 400
+        return (
+            json.dumps(
+                {
+                    "message": "Error in PUT",
+                    "error": "Key is too long",
+                    "address": ADDRESS,
+                    "causal-context": VECTOR_CLOCK,
+                }
+            ),
+            400,
+        )
     # At this point, we have a valid put
     shard_to_PUT = get_shard_for_key(key, VIEW)
     curr_shard = get_my_shard_id()
@@ -204,18 +223,28 @@ def put_key(key):
         replaced = True
         if status_code == 201:
             replaced = False
-            return json.dumps({
-                "message": "Added successfully",
-                "replaced": replaced,
-                "address": ADDRESS,
-                "causal-context": VECTOR_CLOCK,
-            }), status_code
+            return (
+                json.dumps(
+                    {
+                        "message": "Added successfully",
+                        "replaced": replaced,
+                        "address": ADDRESS,
+                        "causal-context": VECTOR_CLOCK,
+                    }
+                ),
+                status_code,
+            )
         else:
-            return json.dumps({
-                "message": "Updated successfully",
-                "replaced": replaced,
-                "causal-context": VECTOR_CLOCK,
-            }), status_code
+            return (
+                json.dumps(
+                    {
+                        "message": "Updated successfully",
+                        "replaced": replaced,
+                        "causal-context": VECTOR_CLOCK,
+                    }
+                ),
+                status_code,
+            )
     else:
         # Forward to some address in the different shard
         forward_IP = VIEW[shard_to_PUT][0]
@@ -561,7 +590,7 @@ def gossip():
 
     kvs = copy.deepcopy(mergedKVS)
     VECTOR_CLOCK = copy.deepcopy(mergedVC)
-    
+
     return "Success", 200
 
 
@@ -570,7 +599,7 @@ def get_shard_for_key(key, view):
     # hash key
     hashed_key = hash(key)
     # take mod length(view)
-    view_index = hashed_key % (len(view) - 1)
+    view_index = hashed_key % (len(view))
     return str(view_index)
 
 
