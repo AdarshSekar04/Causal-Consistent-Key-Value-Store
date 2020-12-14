@@ -15,6 +15,10 @@ import json
 import os
 import sys
 
+import time
+import threading
+import random
+
 app = Flask(__name__)
 primary = False
 
@@ -51,6 +55,25 @@ kvs = {}
 VECTOR_CLOCK = {}
 
 VIEW_CHANGE_IN_PROGRESS = False  # Set to true while a view change is executing. While this is true, read/writes may not be correct
+
+WAIT_SECONDS_BASE = 2
+
+def gossiper():
+    next_node = choose_next_node([ADDRESS])
+    try:
+        resp = requests.put(
+            f"http://{next_node}/kvs/gossip",
+            data=json.dumps(
+                {
+                  "kvs": kvs,
+                  "causal-context": VECTOR_CLOCK,
+                  "gossiped": [ADDRESS]
+                }
+            ),
+        )
+    except:
+        logging.warning("Attempting to connect to: " + next_node) 
+    threading.Timer(WAIT_SECONDS_BASE + random.randint(1, 5), gossiper).start()
 
 # ----------------------END SETUP------------------------
 #########################################################
@@ -524,6 +547,42 @@ def delete_key(key):
         % (request.method, request.full_path, key, json.dumps(VIEW))
     }, 500
 
+@app.route("/kvs/gossip", methods=["PUT"])
+def gossip():
+    json_dict = json.loads(request.get_data())
+    if "kvs" not in json_dict and "causal-context" not in json_dict:
+        return {
+            "error": "kvs and context required to gossip: Method %s, View %s,"
+            % (request.method, json.dumps(VIEW))
+        }, 503
+    if set(json_dict["gossiped"]) == set(VIEW[get_my_shard_id]):
+        return {
+            "message": "Gossip completed, all nodes should have the same kvs and causal-context",
+            "kvs": kvs,
+            "causal-context": VECTOR_CLOCK,
+        }, 204       
+
+    nextGossip = choose_next_node(json_dict["gossiped"])
+    their_kvs = json_dict["kvs"]
+    their_vc = json_dict["causal-context"]
+    mergedKVS, mergedVC = merge_kvs(kvs, their_kvs, VECTOR_CLOCK, their_vc)
+    mergedGossiped = json_dict["gossiped"].append(ADDRESS)
+
+    print('nextGossip:' + nextGossip)
+    print('mergedKVS:' + mergedKVS)
+    print('mergedVC:' + mergedVC)
+    resp = requests.put(
+        f"http://{nextGossip}/kvs/gossip",
+        data=json.dumps(
+            {
+              "kvs": mergedKVS,
+              "causal-context": mergedVC,
+              "gossiped": mergedGossiped
+            }
+        ), timeout=2
+    )
+    kvs = resp.data["kvs"]
+    return resp.content, resp.status_code
 
 # returns the shard ID for the given key
 def get_shard_for_key(key, view):
@@ -561,6 +620,40 @@ def merge_vector_clocks(vector1, vector2):
 def choose_concurrent_value(value1, value2):
     return value1 if hash(value1) < hash(value2) else value2
 
+# chooses next address 
+def choose_next_node(prev_nodes):
+    for address in VIEW[get_my_shard_id()]:
+          if address not in prev_nodes:
+              return address
+    return -1
+
+# merges two KVS's based on Vector Clocks
+def merge_kvs(kvs1, kvs2, vc1, vc2):
+    mergedKVS = {}
+    for key in kvs1:
+        if key not in kvs2:
+            mergedKVS[key] = kvs1[key]
+        else:
+            if compare_vector_clock(vc1[key], vc2[key]) == -1:
+                mergedKVS[key] = kvs2[key]
+            elif compare_vector_clock(vc1[key], vc2[key]) == 1:
+                mergedKVS[key] = kvs2[key]
+            else:
+                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
+    for key in kvs2:
+        if key not in kvs1:
+            mergedKVS[key] = kvs2[key]
+        else:
+            if compare_vector_clock(vc1[key], vc2[key]) == 1:
+                mergedKVS[key] = kvs2[key]
+            elif compare_vector_clock(vc1[key], vc2[key]) == -1:
+                mergedKVS[key] = kvs2[key]
+            else:
+                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])         
+    mergedVC = merge_vector_clocks(vc1, vc2)
+    return (mergedKVS, mergedVC)
+
+gossiper()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=13800, debug=True)
