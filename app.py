@@ -89,19 +89,19 @@ def get_key(key):
         ):  # check that there is no causal context for the key
             # there is no causal history
             if key not in kvs:
-                return {
+                return json.dumps({
                     "doesExist": False,
                     "error": "Key does not exist",
                     "message": "Error in GET",
-                    "causal-context": json.dumps(VECTOR_CLOCK),
-                }, 404
+                    "causal-context": VECTOR_CLOCK,
+                }), 404
             else:
-                return {
+                return json.dumps({
                     "doesExist": True,
                     "message": "Retrieved successfully",
                     "value": str(kvs[key]),
-                    "causal-context": json.dumps(VECTOR_CLOCK),
-                }, 200
+                    "causal-context": VECTOR_CLOCK,
+                }), 200
 
         else:
             # if there is causal history
@@ -124,25 +124,25 @@ def get_key(key):
                         ):
                             kvs[key] = r.json()["value"]
                             VECTOR_CLOCK[key] = r.json()["causal-context"][key]
-                            return {
+                            return json.dumps({
                                 "doesExist": True,
                                 "message": "Retrieved successfully",
                                 "value": str(kvs[key]),
                                 "address": node,
-                                "causal-context": json.dumps(VECTOR_CLOCK),
-                            }, 200
+                                "causal-context": VECTOR_CLOCK,
+                            }), 200
                     # we can't service you
                     return {
                         "error": "Unable to satisfy request",
                         "message": "Error in GET",
                     }
 
-            return {
+            return json.dumps({
                 "doesExist": True,
                 "message": "Retrieved successfully",
                 "value": str(kvs[key]),
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 200
+                "causal-context": VECTOR_CLOCK,
+            }), 200
 
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
@@ -155,11 +155,11 @@ def get_key(key):
             except:
                 continue
 
-        return {
+        return json.dumps({
             "error": "Unable to connect to shard",
             "message": "Error in GET",
-            "causal-context": json.dumps(VECTOR_CLOCK),
-        }, 503
+            "causal-context": VECTOR_CLOCK,
+        }), 503
 
 
 # TODO task 1 logically sound but needs testing
@@ -298,17 +298,17 @@ def get_shard_by_id(id):
                     continue
                 if resp.status_code == 200:
                     return resp.content, resp.status_code
-            return {
+            return json.dumps({
                 "error": "Unable to reach any node in shard",
                 "message": "Error in GET",
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 500
+                "causal-context": VECTOR_CLOCK,
+            }), 500
         else:
-            return {
+            return json.dumps({
                 "error": "Shard id does not exist",
                 "message": "Error in GET",
-                "causal-context": json.dumps(VECTOR_CLOCK),
-            }, 404
+                "causal-context": VECTOR_CLOCK,
+            }), 404
     return
 
 
@@ -463,11 +463,11 @@ def perform_view_change():
     VIEW_CHANGE_IN_PROGRESS = True
 
     if "rebalance" in json_dict:
-        return {
+        return json.dumps({
             "message": "View change has begun, returning kvs and context",
             "kvs": kvs,
-            "causal-context": json.dumps(VECTOR_CLOCK),
-        }
+            "causal-context": VECTOR_CLOCK,
+        })
 
     total_KVS = {}
     total_vector_clock = {}
