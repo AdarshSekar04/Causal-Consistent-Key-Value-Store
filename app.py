@@ -249,9 +249,23 @@ def put_key(key):
             )
     else:
         # Forward to some address in the different shard
-        forward_IP = VIEW[shard_to_PUT][0]
-        resp = requests.put(f"http://{forward_IP}/kvs/keys/{key}", data=request.data)
-        return resp.content, resp.status_code
+        forward_IPS = VIEW[shard_to_PUT]
+        success = False
+        resp = None
+        forwarded = None
+        for address in forward_IPS:
+            try:
+                resp = requests.put(f"http://{address}/kvs/keys/{key}", data=request.data)
+                success = True
+                forwarded = address
+                break
+            except requests.exceptions.Timeout:
+                continue
+        if success == False:
+            return(json.dumps({"error":"Unable to satisfy request","message":"Error in PUT"}), 400)
+        forwarded_data = json.loads(resp.content)
+        return (json.dumps({"message": forwarded_data["message"], "replaced": forwarded_data["replaced"], "address": forwarded, "causal-context": forwarded_data["causal-context"]}), resp.status_code)
+
 
 
 # TODO task 3
