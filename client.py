@@ -2,12 +2,16 @@ import requests # Note, you may need to install this package via pip (or pip3)
 
 localhost = "localhost"
 timeout = 5
+ID = 0
 
 class Client():
-    def __init__(self,causal_context_flag=True,print_response=False):
+    def __init__(self,causal_context_flag=True,print_response=False, name = ID):
         self.causal_context = {}
         self.causal_context_flag = causal_context_flag
         self.print_response = print_response
+        global ID
+        self.id = ID
+        ID = ID + 1
 
     def putKey(self, key, value, port):
         result = requests.put('http://%s:%s/kvs/keys/%s'%(localhost, str(port), key),timeout=timeout,
@@ -15,7 +19,7 @@ class Client():
                               headers = {"Content-Type": "application/json"})
 
         if self.print_response:
-            print("PUT key result %s"%str(result.content))
+            print("PUT key %s by client %s to port %s result %s"%(key, self.id, port, str(result.content)))
 
         return self.formatResult(result)
 
@@ -25,7 +29,7 @@ class Client():
                               headers = {"Content-Type": "application/json"})
 
         if self.print_response:
-            print("GET key result %s"%str(result.content))
+            print("GET key %s by client %s to port %s result %s"%(key, self.id, port, str(result.content)))
 
         return self.formatResult(result)
 
