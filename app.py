@@ -173,10 +173,9 @@ def get_key(key):
         for ip in ip_list:
             try:
                 r = requests.get(f"http://{ip}/kvs/keys/{key}", timeout=2)
-                if r.status_code == 200:
-                    response_json = r.json()
-                    response_json["address"] = ip
-                    return response_json, r.status_code
+                response_json = r.json()
+                response_json["address"] = ip
+                return response_json, r.status_code
             except:
                 continue
 
@@ -538,7 +537,7 @@ def perform_view_change():
                     resp = requests.put(
                         f"http://{address}/kvs/view-change",
                         data=json.dumps({"rebalance": True}),
-                        timeout=0.01,
+                        timeout=0.1,
                     )
                     sys.stderr.write("resp completed")
                     resp_json_contents = json.loads(resp.content)
