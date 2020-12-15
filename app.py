@@ -152,7 +152,7 @@ def get_key(key):
                     return {
                         "error": "Unable to satisfy request",
                         "message": "Error in GET",
-                    }
+                    }, 400
 
             return (
                 json.dumps(
