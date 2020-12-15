@@ -81,11 +81,15 @@ def gossiper():
 #########################################################
 
 # TODO task 1 logically sound but needs testing
+#Need to change GET, so that we check the causal history of each key
 @app.route("/kvs/keys/<string:key>", methods=["GET"])
 def get_key(key):
+    #global output
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
+    #If the current address is in the target shard
     if ADDRESS in ip_list:
+        #This if takes care of case where there is no causal context
         if (
             not request.get_data() or key not in request.json["causal-context"]
         ):  # check that there is no causal context for the key
@@ -103,13 +107,19 @@ def get_key(key):
                     404,
                 )
             else:
+                #We get the value of the key, and its causal context from our kvs
+                key_val = kvs[key][0]
+                key_causal_context = {}
+                if len(kvs[key]) > 1:
+                    key_causal_context = kvs[key][1]
+                #Now, we return that key with its causal context
                 return (
                     json.dumps(
                         {
                             "doesExist": True,
                             "message": "Retrieved successfully",
-                            "value": str(kvs[key]),
-                            "causal-context": VECTOR_CLOCK,
+                            "value": str(key_val),
+                            "causal-context": key_causal_context,
                         }
                     ),
                     200,
@@ -120,63 +130,87 @@ def get_key(key):
             # stall if the vector clock for the key is > local vector clock
             data = json.loads(request.get_data())
             if "causal-context" in data and key in data["causal-context"]:
-                if (key not in VECTOR_CLOCK) or data["causal-context"][
-                    key
-                ] > VECTOR_CLOCK[key]:
-                    # reach out to all other nodes in the shard to try to update my vector clock
+                #Store the context of the key we are trying to find
+                key_context = data["causal-context"][key]
+                #If the key is not in our VECTOR_CLOCK, or the key_context is not equal to our VECTOR_CLOCK
+                if (key not in VECTOR_CLOCK or key_context != VECTOR_CLOCK[key]) and ("forwarded" not in data):
+                    # reach out to all other nodes in the shard, to try to see if any has the correct VECTOR_CLOCK for that key
                     shard_ID = get_my_shard_id()
                     for node in VIEW[shard_ID]:
                         if ADDRESS == node:
                             continue
-                        r = requests.get(f"http://{node}/kvs/keys/{key}", timeout=2)
+                        #Using a try block to handle timeouts. Timeouts take care of infinite looping
+                        try:
+                            forward_data = data
+                            forward_data["forwarded"] = True
+                            r = requests.get(f"http://{node}/kvs/keys/{key}", data= forward_data, timeout=2)
+                        except requests.exceptions.Timeout:
+                            continue
+                        #If the key does exist, we return the value associated with it
                         if (
                             r.json()["doesExist"]
                             and (key in r.json()["causal-context"])
                             and r.json()["causal-context"][key] > VECTOR_CLOCK[key]
                         ):
-                            kvs[key] = r.json()["value"]
-                            VECTOR_CLOCK[key] = r.json()["causal-context"][key]
+                            key_value = r.json()["value"]
+                            #Get the causal context of that key, and return it
+                            key_causal_context = r.json()["causal-context"][key]
                             return (
                                 json.dumps(
                                     {
                                         "doesExist": True,
                                         "message": "Retrieved successfully",
-                                        "value": str(kvs[key]),
+                                        "value": key_value,
                                         "address": node,
-                                        "causal-context": VECTOR_CLOCK,
+                                        "causal-context": key_causal_context,
                                     }
                                 ),
                                 200,
                             )
-                    # we can't service you
+                    #If no node had the right value, we return
                     return {
                         "error": "Unable to satisfy request",
                         "message": "Error in GET",
                     }, 400
-
+                #Else if the key is not in VECTOR_CLOCK or the context is not equal to the clock for that key, and it's a forwarded message, return False
+                elif(key not in VECTOR_CLOCK or key_context != VECTOR_CLOCK[key]) and ("forwarded" in data):
+                    return (
+                    json.dumps(
+                        {
+                            "doesExist": False,
+                            "error": "Key does not exist",
+                            "message": "Error in GET",
+                            "causal-context": VECTOR_CLOCK,
+                        }
+                    ),
+                    404,
+                )
+            #Else, we found the right key, so we return it along with it's causal context
+            key_val = kvs[key][0]
+            key_causal_context = kvs[key][1]
             return (
                 json.dumps(
                     {
                         "doesExist": True,
                         "message": "Retrieved successfully",
-                        "value": str(kvs[key]),
-                        "causal-context": VECTOR_CLOCK,
+                        "value": key_val,
+                        "causal-context": key_causal_context,
                     }
                 ),
                 200,
             )
-
+    #Else, if our address is not in the ip_list, the key should be in a different shard, so forward the query to all addresses in the shard till we get a response
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
         # Only returns error in the case that all nodes in the target replica are unreachable
-
+        data = json.loads(request.get_data())
         for ip in ip_list:
             try:
-                r = requests.get(f"http://{ip}/kvs/keys/{key}", timeout=2)
+                r = requests.get(f"http://{ip}/kvs/keys/{key}", data=data,timeout=5)
                 response_json = r.json()
                 response_json["address"] = ip
                 return response_json, r.status_code
-            except:
+            except requests.exceptions.Timeout:
                 continue
 
         return (
@@ -211,6 +245,7 @@ def get_key_count():
 # we will have to enforce a total order over those requests. Can do Leader Election.
 @app.route("/kvs/keys/<string:key>", methods=["PUT"])
 def put_key(key):
+    #global output
     # Try reading the data. If theres an error, return error message
     data = json.loads(request.get_data())
     try:
@@ -240,7 +275,7 @@ def put_key(key):
     # At this point, we have a valid put
     shard_to_PUT = get_shard_for_key(key, VIEW)
     curr_shard = get_my_shard_id()
-    if shard_to_PUT == curr_shard:  # or "internal" in data or broadcast in data:
+    if shard_to_PUT == curr_shard:  
         passed_VC = None
         if "causal-context" in data:
             passed_VC = data["causal-context"]
@@ -248,7 +283,7 @@ def put_key(key):
         status_code = localStore(key, val, curr_shard, passed_VC)
         # Now we've stored it locally, need to check if we need to broadcast
         if "broadcast" not in data:
-            broadcast_to_shard(key, val, curr_shard, VECTOR_CLOCK)
+            broadcast_to_shard(key, val, curr_shard, passed_VC)
         #
         replaced = True
         if status_code == 201:
@@ -258,7 +293,7 @@ def put_key(key):
                     {
                         "message": "Added successfully",
                         "replaced": replaced,
-                        "causal-context": VECTOR_CLOCK,
+                        "causal-context": kvs[key][1],
                     }
                 ),
                 status_code,
@@ -269,7 +304,7 @@ def put_key(key):
                     {
                         "message": "Updated successfully",
                         "replaced": replaced,
-                        "causal-context": VECTOR_CLOCK,
+                        "causal-context": kvs[key][1],
                     }
                 ),
                 status_code,
@@ -280,23 +315,29 @@ def put_key(key):
         success = False
         resp = None
         forwarded = None
+        #Try all address's in the correct shard. If one returns a value, we can break out of the loop. 
         for address in forward_IPS:
             try:
                 resp = requests.put(
-                    f"http://{address}/kvs/keys/{key}", data=request.data
+                    f"http://{address}/kvs/keys/{key}", data=request.data, timeout=2
                 )
                 success = True
                 forwarded = address
                 break
             except requests.exceptions.Timeout:
                 continue
+        #If we were not able to forward the message to any of the addresses in the correct shard, return an error
         if success == False:
             return (
                 json.dumps(
-                    {"error": "Unable to satisfy request", "message": "Error in PUT"}
+                    {
+                        "error": "Unable to satisfy request", 
+                        "message": "Error in PUT"
+                    }
                 ),
                 400,
             )
+        #Otherwise, return the data, with the forwarded address
         forwarded_data = json.loads(resp.content)
         return (
             json.dumps(
@@ -367,7 +408,7 @@ def get_shard_by_id(id):
 
 # This function will store a key and value locally. Returns status code 200 if key was already in dictionary,
 # and 201 if key is new
-def localStore(key, value, curr_shard, new_clock=None):
+def localStore(key, value, curr_shard, new_clock):
     toReturn = 201
     if key in kvs:
         toReturn = 200
@@ -379,23 +420,38 @@ def localStore(key, value, curr_shard, new_clock=None):
             # So, we take the minimum value for the key, to break the tie
             if key in new_clock:
                 new_VC = new_clock[key]
+                #Add 1 to the new clock for theky
+                new_clock[key] += 1
                 if new_VC == key_clock:
-                    smaller = choose_concurrent_value(value, kvs[key])  # Select smaller string always
-                    kvs[key] = smaller
+                    smaller = choose_concurrent_value(value, kvs[key][0])  # Select smaller string always
+                    kvs[key] = [smaller, new_clock]
                     VECTOR_CLOCK[key] += 1  # Increment vector clock for shard
-                    return toReturn
                 # In case of receiving a request with a lower VC, don't change current key value, and just return
                 elif new_VC < key_clock:
                     return toReturn
+                #If the new clock is bigger than our clock, we change our key value, and set our clock value to the incoming clock value
                 else:
                     VECTOR_CLOCK[key] = new_VC
                     VECTOR_CLOCK[key] += 1
-
-    # Otherwise, if the key was not in our dictionary or the clocks for the key didn't match
-    kvs[key] = value
+                    kvs[key] = [value, new_clock]
+                return toReturn
+    #If the new_clock is None, then make it a dictionary
+    if new_clock is None:
+        new_clock = {}
+    # If the key was not in our dictionary or the key wasn't in the causal context
+    #First initialise the key clock for the incoming key
+    if key not in new_clock:
+        new_clock[key] = 0
+    #Increment key clock
+    new_clock[key] += 1
+    kvs[key] = [value, new_clock]
     # If this is the first time seeing the key, set a value for it
     if toReturn == 201:
         VECTOR_CLOCK[key] = 1
+    #Otherwise, increment VECTOR_CLOCK[key].
+    #Might be able to drop else, because we should be able to restart the vector_clock for the key if there's is no causal_context for it. (Sorta like starting a new conversation in a chat)
+    else:
+        VECTOR_CLOCK[key] += 1
     return toReturn
 
 
@@ -410,7 +466,7 @@ def broadcast_to_shard(key, value, shard_ID, new_clock):
             resp = requests.put(
                 f"http://{address}/kvs/keys/{key}",
                 data=json.dumps(
-                    {"value": value, "causal-context": VECTOR_CLOCK, "broadcast": True}
+                    {"value": str(value), "causal-context": new_clock, "broadcast": True}
                 ),
                 timeout=2,
             )
@@ -661,10 +717,13 @@ def delete_key(key):
 def gossip():
     global kvs
     global VECTOR_CLOCK
+    #Load data
     json_dict = json.loads(request.get_data())
 
+    #Store incoming kvs and VC in variables
     their_kvs = json_dict["kvs"]
     their_vc = json_dict["causal-context"]
+    #mergeKVS and VC
     mergedKVS, mergedVC = merge_kvs(kvs, their_kvs, VECTOR_CLOCK, their_vc)
 
     kvs = copy.deepcopy(mergedKVS)
@@ -714,7 +773,7 @@ def merge_vector_clocks(vector1, vector2):
 
 # selects the value with the lowest hash value
 def choose_concurrent_value(value1, value2):
-    return value1 if hash(value1) < hash(value2) else value2
+    return 1 if hash(value1) < hash(value2) else -1
 
 
 # chooses next address
@@ -728,16 +787,25 @@ def choose_next_node(prev_nodes):
 # merges two KVS's based on Vector Clocks
 def merge_kvs(kvs1, kvs2, vc1, vc2):
     mergedKVS = {}
+    #For keys in the first kvs
     for key in kvs1:
+        #If the key isn't in the second kvs, we store it in our mergedKVS
         if key not in kvs2:
             mergedKVS[key] = kvs1[key]
+        #Otherwise, we compare the vector clocks for both KVS, and take the one that is higher
         else:
-            if compare_vector_clock(vc1[key], vc2[key]) == -1:
+            vc_compared_result = compare_vector_clock(vc1[key], vc2[key])
+            if vc_compared_result == -1:
                 mergedKVS[key] = kvs2[key]
-            elif compare_vector_clock(vc1[key], vc2[key]) == 1:
+            elif vc_compared_result == 1:
                 mergedKVS[key] = kvs1[key]
             else:
-                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
+                keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
+                if keyToChoose == 1:
+                    mergedKVS[key] = kvs1[key]
+                else:
+                    mergedKVS[key] = kvs2[key]
+    #For key in kvs2, we add it to our mergedKVS if it isn't in kvs1. Otherwise, we don't worry about it because we already added all common keys
     for key in kvs2:
         if key not in kvs1:
             mergedKVS[key] = kvs2[key]
@@ -747,7 +815,12 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             elif compare_vector_clock(vc1[key], vc2[key]) == -1:
                 mergedKVS[key] = kvs2[key]
             else:
-                mergedKVS[key] = choose_concurrent_value(kvs1[key], kvs2[key])
+                keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
+                if keyToChoose == 1:
+                    mergedKVS[key] = kvs1[key]
+                else:
+                    mergedKVS[key] = kvs2[key]
+    #Now, we merge the vector clocks, and return our mergedKVS and mergedVC
     mergedVC = merge_vector_clocks(vc1, vc2)
     return mergedKVS, mergedVC
 
@@ -756,3 +829,6 @@ if __name__ == "__main__":
     gossip_thread = threading.Thread(target=gossiper)
     gossip_thread.start()
     app.run(host="0.0.0.0", port=13800, debug=True)
+    
+
+
