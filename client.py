@@ -29,7 +29,7 @@ class Client():
                               headers = {"Content-Type": "application/json"})
 
         if self.print_response:
-            print("GET key %s by client %s to port %s result %s"%(key, self.id, port, str(result.content)))
+            print("GET key %s by client %s  with causal context %sto port %s result %s"%(key, self.id, self.causal_context, port, str(result.content)))
 
         return self.formatResult(result)
 

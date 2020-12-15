@@ -101,7 +101,7 @@ def get_key(key):
                             "doesExist": False,
                             "error": "Key does not exist",
                             "message": "Error in GET",
-                            "causal-context": VECTOR_CLOCK,
+                            "causal-context": request.json["causal-context"]
                         }
                     ),
                     404,
@@ -131,7 +131,7 @@ def get_key(key):
             data = json.loads(request.get_data())
             if "causal-context" in data and key in data["causal-context"]:
                 #Store the context of the key we are trying to find
-                key_context = data["causal-context"][key]
+                key_context = data["causal-context"]
                 #If the key is not in our VECTOR_CLOCK, or the key_context is not equal to our VECTOR_CLOCK
                 if (key not in VECTOR_CLOCK or key_context != VECTOR_CLOCK[key]) and ("forwarded" not in data):
                     # reach out to all other nodes in the shard, to try to see if any has the correct VECTOR_CLOCK for that key
@@ -173,7 +173,7 @@ def get_key(key):
                         "message": "Error in GET",
                     }, 400
                 #Else if the key is not in VECTOR_CLOCK or the context is not equal to the clock for that key, and it's a forwarded message, return False
-                elif(key not in VECTOR_CLOCK or key_context != VECTOR_CLOCK[key]) and ("forwarded" in data):
+                elif(key not in VECTOR_CLOCK or key_context <= VECTOR_CLOCK[key]) and ("forwarded" in data):
                     return (
                     json.dumps(
                         {
@@ -256,7 +256,7 @@ def put_key(key):
                 {
                     "message": "Error in PUT",
                     "error": "Value is missing",
-                    "causal-context": VECTOR_CLOCK,
+                    "causal-context": data["causal-context"],
                 }
             ),
             400,
@@ -267,7 +267,7 @@ def put_key(key):
                 {
                     "message": "Error in PUT",
                     "error": "Key is too long",
-                    "causal-context": VECTOR_CLOCK,
+                    "causal-context": data["causal-context"],
                 }
             ),
             400,
@@ -410,48 +410,28 @@ def get_shard_by_id(id):
 # and 201 if key is new
 def localStore(key, value, curr_shard, new_clock):
     toReturn = 201
-    if key in kvs:
-        toReturn = 200
-        key_clock = VECTOR_CLOCK[key]
-        # This if checks if there was a clock sent
-        if new_clock is not None:
-            # If we are given a clock as part of the request (causal context), we compare the context to out own clock for that key
-            # If our clock is the same as the causal context that was sent, then we were sent a concurrent request
-            # So, we take the minimum value for the key, to break the tie
-            if key in new_clock:
-                new_VC = new_clock[key]
-                #Add 1 to the new clock for theky
-                new_clock[key] += 1
-                if new_VC == key_clock:
-                    smaller = choose_concurrent_value(value, kvs[key][0])  # Select smaller string always
-                    kvs[key] = [smaller, new_clock]
-                    VECTOR_CLOCK[key] += 1  # Increment vector clock for shard
-                # In case of receiving a request with a lower VC, don't change current key value, and just return
-                elif new_VC < key_clock:
-                    return toReturn
-                #If the new clock is bigger than our clock, we change our key value, and set our clock value to the incoming clock value
-                else:
-                    VECTOR_CLOCK[key] = new_VC
-                    VECTOR_CLOCK[key] += 1
-                    kvs[key] = [value, new_clock]
-                return toReturn
-    #If the new_clock is None, then make it a dictionary
+    #If key not in kvs
     if new_clock is None:
         new_clock = {}
-    # If the key was not in our dictionary or the key wasn't in the causal context
-    #First initialise the key clock for the incoming key
-    if key not in new_clock:
-        new_clock[key] = 0
+    if key in kvs:
+        toReturn = 200
+        #Merge all vector clocks
+        tempMerged = merge_vector_clocks(new_clock, VECTOR_CLOCK)
+        mergedVC = merge_vector_clocks(tempMerged, kvs[key][1])
+        mergedVC[key] += 1
+        #I just take the causal context
+        #Everything we know happened before, locally for our key + causal context
+        kvs[key] = [value, mergedVC]
+        VECTOR_CLOCK[key] = mergedVC[key]  # Increment vector clock for share
+        return toReturn
+    
+    # If the key was not in our kvs
+    VECTOR_CLOCK[key] = 0
     #Increment key clock
-    new_clock[key] += 1
-    kvs[key] = [value, new_clock]
-    # If this is the first time seeing the key, set a value for it
-    if toReturn == 201:
-        VECTOR_CLOCK[key] = 1
-    #Otherwise, increment VECTOR_CLOCK[key].
-    #Might be able to drop else, because we should be able to restart the vector_clock for the key if there's is no causal_context for it. (Sorta like starting a new conversation in a chat)
-    else:
-        VECTOR_CLOCK[key] += 1
+    mergedVC = merge_vector_clocks(new_clock, VECTOR_CLOCK)
+    mergedVC[key] += 1
+    kvs[key] = [value, mergedVC]
+    VECTOR_CLOCK[key] = mergedVC[key]
     return toReturn
 
 
