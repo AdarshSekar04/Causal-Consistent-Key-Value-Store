@@ -372,7 +372,6 @@ def localStore(key, value, curr_shard, new_clock=None):
     if key in kvs:
         toReturn = 200
         key_clock = VECTOR_CLOCK[key]
-        VECTOR_CLOCK[key] += 1  # Increment vector clock for shard
         # This if checks if there was a clock sent
         if new_clock is not None:
             # If we are given a clock as part of the request (causal context), we compare the context to out own clock for that key
@@ -381,12 +380,16 @@ def localStore(key, value, curr_shard, new_clock=None):
             if key in new_clock:
                 new_VC = new_clock[key]
                 if new_VC == key_clock:
-                    smaller = min(value, kvs[key])  # Select smaller string always
+                    smaller = choose_concurrent_value(value, kvs[key])  # Select smaller string always
                     kvs[key] = smaller
+                    VECTOR_CLOCK[key] += 1  # Increment vector clock for shard
                     return toReturn
                 # In case of receiving a request with a lower VC, don't change current key value, and just return
                 elif new_VC < key_clock:
                     return toReturn
+                else:
+                    VECTOR_CLOCK[key] = new_VC
+                    VECTOR_CLOCK[key] += 1
 
     # Otherwise, if the key was not in our dictionary or the clocks for the key didn't match
     kvs[key] = value
@@ -560,6 +563,7 @@ def perform_view_change():
                                 vector_compare == -1
                             ):  # total_kvs needs to update its value
                                 total_KVS[key] = node_kvs[key]
+                                total_vector_clock[key] = node_vector_clock[key]
                             # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
                             if (
                                 vector_compare == 0
