@@ -1,0 +1,19 @@
+Listed below are each of the team members, and the parts they did for the assignment
+
+Jonathan Amar:
+	Wrote the code to handle the view change
+
+Spencer Gurley:
+	Wrote the GET shards, GET shardInfo and established the gossip protocol
+
+Nicholas Shekelle:
+	Wrote the skeleton for the app
+	Also wrote the original Design Doc, so that the group had a starting point.
+  Wrote GET Key and GET KeyCount
+
+Adarsh Sekar:
+	Wrote the PUT function
+
+The group as a whole got together to perform testing, so everyone took part in testing and debugging.
+Everyone worked very hard during the last couple days to ensure we were submitting a solid project. 
+The majority of time spent on the project was together as a group. 
