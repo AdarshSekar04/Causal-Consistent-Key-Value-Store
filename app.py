@@ -88,11 +88,19 @@ def get_key(key):
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
     #If the current address is in the target shard
+    data = {"causal-context": {}}
+    try:
+        data = json.loads(request.get_data())
+    except: 
+        print("foo")
+
     if ADDRESS in ip_list:
         #This if takes care of case where there is no causal context
-        if (
-            not request.get_data() or key not in request.json["causal-context"]
-        ):  # check that there is no causal context for the key
+        # if (
+        #     (not request.get_data() or "causal-context" not in request.json) and key not in request.json["causal-context"]
+        # ):
+        if data == {} or "causal-context" not in data or data["causal-context"]  == {} or key not in data["causal-context"]: 
+        #  # check that there is no causal context for the key
             # there is no causal history
             if key not in kvs:
                 return (
@@ -101,7 +109,7 @@ def get_key(key):
                             "doesExist": False,
                             "error": "Key does not exist",
                             "message": "Error in GET",
-                            "causal-context": request.json["causal-context"]
+                            "causal-context": data["causal-context"]
                         }
                     ),
                     404,
@@ -119,7 +127,7 @@ def get_key(key):
                             "doesExist": True,
                             "message": "Retrieved successfully",
                             "value": str(key_val),
-                            "causal-context": key_causal_context,
+                            "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
                         }
                     ),
                     200,
@@ -133,7 +141,8 @@ def get_key(key):
                 #Store the context of the key we are trying to find
                 key_context = data["causal-context"]
                 #If the key is not in our VECTOR_CLOCK, or the key_context is not equal to our VECTOR_CLOCK
-                if (key not in VECTOR_CLOCK or key_context != VECTOR_CLOCK[key]) and ("forwarded" not in data):
+                # TODO use compare_causal_context to compare causal context of the client with the causal context of the key trying to 
+                if (key not in VECTOR_CLOCK or  compare_causal_context(key_context, kvs[key][1])) and ("forwarded" not in data):
                     # reach out to all other nodes in the shard, to try to see if any has the correct VECTOR_CLOCK for that key
                     shard_ID = get_my_shard_id()
                     for node in VIEW[shard_ID]:
@@ -162,25 +171,25 @@ def get_key(key):
                                         "message": "Retrieved successfully",
                                         "value": key_value,
                                         "address": node,
-                                        "causal-context": key_causal_context,
+                                        "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
                                     }
                                 ),
                                 200,
                             )
                     #If no node had the right value, we return
-                    return {
+                    return (json.dumps({
                         "error": "Unable to satisfy request",
                         "message": "Error in GET",
-                    }, 400
+                    }), 400)
                 #Else if the key is not in VECTOR_CLOCK or the context is not equal to the clock for that key, and it's a forwarded message, return False
-                elif(key not in VECTOR_CLOCK or key_context <= VECTOR_CLOCK[key]) and ("forwarded" in data):
+                elif(key not in VECTOR_CLOCK or key_context[key] <= VECTOR_CLOCK[key]) and ("forwarded" in data):
                     return (
                     json.dumps(
                         {
                             "doesExist": False,
                             "error": "Key does not exist",
                             "message": "Error in GET",
-                            "causal-context": VECTOR_CLOCK,
+                            "causal-context":  data["causal-context"],
                         }
                     ),
                     404,
@@ -194,7 +203,7 @@ def get_key(key):
                         "doesExist": True,
                         "message": "Retrieved successfully",
                         "value": key_val,
-                        "causal-context": key_causal_context,
+                        "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
                     }
                 ),
                 200,
@@ -203,22 +212,33 @@ def get_key(key):
     else:
         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
         # Only returns error in the case that all nodes in the target replica are unreachable
-        data = json.loads(request.get_data())
+
+        # data = json.loads(request.get_data())
         for ip in ip_list:
             try:
-                r = requests.get(f"http://{ip}/kvs/keys/{key}", data=data,timeout=5)
-                response_json = r.json()
+                r = requests.get(f"http://{ip}/kvs/keys/{key}", data=json.dumps(data),timeout=.2)
+                
+                # response_json = r.json()
+                response_json = json.loads(r.content)
                 response_json["address"] = ip
-                return response_json, r.status_code
+                return json.dumps(response_json), r.status_code
             except requests.exceptions.Timeout:
                 continue
+            except Exception as inst:
+                return (json.dumps(
+                    {
+                        "error": f"Unable to connect to shard\n{inst}\n response, contents {r.content}",
+                        "message": f"Error in GET for {ip}",
+                        "causal-context":  data["causal-context"],
+                    }
+                ), 504)
 
         return (
             json.dumps(
                 {
                     "error": "Unable to connect to shard",
                     "message": "Error in GET",
-                    "causal-context": VECTOR_CLOCK,
+                    "causal-context":  data["causal-context"],
                 }
             ),
             503,
@@ -229,11 +249,11 @@ def get_key(key):
 @app.route("/kvs/key-count", methods=["GET"])
 def get_key_count():
     key_count = len(kvs)
-    return {
+    return (json.dumps({
         "message": "Key count retrieved successfully",
         "key-count": key_count,
         "shard-id": get_my_shard_id(),
-    }, 200
+    }), 200)
 
 
 # TODO task 2
@@ -365,12 +385,12 @@ def get_shards():
 @app.route("/kvs/shards/<string:id>", methods=["GET"])
 def get_shard_by_id(id):
     if id == get_my_shard_id():
-        return {
+        return json.dumps({
             "message": "Shard information retrieved successfully",
             "shard-id": id,
             "key-count": len(kvs),
             "replicas": VIEW[id],
-        }, 200
+        }), 200
     else:
         if id in VIEW:
             for node in VIEW[id]:
@@ -738,6 +758,29 @@ def compare_vector_clock(vc1, vc2):
     if vc1 < vc2:
         return -1
 
+# returns true if cc2 -> cc1
+def compare_causal_context(cc1, cc2):
+    # check for cc2 -> cc1
+    seenStrictOrder = False
+    
+    for key in cc1:
+        if key in cc2:
+            # if any key in cc2 is greater than the key in cc1, break
+            if cc2[key] > cc1[key]:
+                return False
+                break
+            if cc2[key] < cc1[key]:
+                seenStrictOrder = True
+                continue
+            if cc2[key] == cc1[key]:
+                continue
+    for key in cc2:
+        if key not in cc1 and cc2[key] > 0:
+            return False
+    
+    return True
+
+
 
 # returns the pairwise maximum between each element of vector1 and vector2
 def merge_vector_clocks(vector1, vector2):
@@ -753,7 +796,7 @@ def merge_vector_clocks(vector1, vector2):
 
 # selects the value with the lowest hash value
 def choose_concurrent_value(value1, value2):
-    return 1 if hash(value1) < hash(value2) else -1
+    return value1 if hash(value1) < hash(value2) else value2
 
 
 # chooses next address
@@ -774,32 +817,52 @@ def merge_kvs(kvs1, kvs2, vc1, vc2):
             mergedKVS[key] = kvs1[key]
         #Otherwise, we compare the vector clocks for both KVS, and take the one that is higher
         else:
-            vc_compared_result = compare_vector_clock(vc1[key], vc2[key])
-            if vc_compared_result == -1:
-                mergedKVS[key] = kvs2[key]
-            elif vc_compared_result == 1:
-                mergedKVS[key] = kvs1[key]
+            vc_compared_result1 = compare_causal_context(kvs1[key][1], kvs2[key][1])
+            if(vc_compared_result1 == False):
+                vc_compared_result2 = compare_causal_context(kvs2[key][1], kvs1[key][1])
+                if vc_compared_result1 == False and vc_compared_result2 == False: # we are looking at concurrent keys
+                    keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
+                    merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                    mergedKVS[key] = [keyToChoose, merged_vc]
+                    continue
+                # kvs2 -> kvs1 for a given key
+                keyToChoose = kvs1[key][0]
+                merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                mergedKVS[key] = [keyToChoose, merged_vc]
+                continue
+
+
             else:
-                keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
-                if keyToChoose == 1:
-                    mergedKVS[key] = kvs1[key]
-                else:
-                    mergedKVS[key] = kvs2[key]
+                keyToChoose = kvs2[key][0]
+                merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                mergedKVS[key] = [keyToChoose, merged_vc]
+                continue
+            
     #For key in kvs2, we add it to our mergedKVS if it isn't in kvs1. Otherwise, we don't worry about it because we already added all common keys
     for key in kvs2:
         if key not in kvs1:
             mergedKVS[key] = kvs2[key]
         else:
-            if compare_vector_clock(vc1[key], vc2[key]) == 1:
-                mergedKVS[key] = kvs1[key]
-            elif compare_vector_clock(vc1[key], vc2[key]) == -1:
-                mergedKVS[key] = kvs2[key]
+            vc_compared_result1 = compare_causal_context(kvs1[key][1], kvs2[key][1])
+            if(vc_compared_result1 == False):
+                vc_compared_result2 = compare_causal_context(kvs2[key][1], kvs1[key][1])
+                if vc_compared_result1 == False and vc_compared_result2 == False: # we are looking at concurrent keys
+                    keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
+                    merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                    mergedKVS[key] = [keyToChoose, merged_vc]
+                    continue
+                # kvs2 -> kvs1 for a given key
+                keyToChoose = kvs1[key][0]
+                merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                mergedKVS[key] = [keyToChoose, merged_vc]
+                continue
+
+
             else:
-                keyToChoose = choose_concurrent_value(kvs1[key][0], kvs2[key][0])
-                if keyToChoose == 1:
-                    mergedKVS[key] = kvs1[key]
-                else:
-                    mergedKVS[key] = kvs2[key]
+                keyToChoose = kvs2[key][0]
+                merged_vc = merge_vector_clocks(kvs1[key][1], kvs2[key][1])
+                mergedKVS[key] = [keyToChoose, merged_vc]
+                continue    
     #Now, we merge the vector clocks, and return our mergedKVS and mergedVC
     mergedVC = merge_vector_clocks(vc1, vc2)
     return mergedKVS, mergedVC
