@@ -60,20 +60,22 @@ def gossiper():
     global kvs
     global VECTOR_CLOCK
     while True:
-        list_of_addresses_in_shard = VIEW[get_my_shard_id()]
-        for address in list_of_addresses_in_shard:
-            if address == ADDRESS:
-                continue
-            try:
-                resp = requests.put(
-                    f"http://{address}/kvs/gossip",
-                    data=json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}),
-                    timeout=0.5
-                )
-                kvs = resp.json()["kvs"]
-                VECTOR_CLOCK = resp.json()["causal-context"]
-            except:
-                logging.warning("Attempting to connect to: " + address)
+        if not VIEW_CHANGE_IN_PROGRESS:
+            list_of_addresses_in_shard = VIEW[get_my_shard_id()]
+            for address in list_of_addresses_in_shard:
+                if address == ADDRESS:
+                    continue
+                try:
+                    resp = requests.put(
+                        f"http://{address}/kvs/gossip",
+                        data=json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}),
+                        timeout=0.5
+                    )
+                    if resp.status_code == 200:
+                        kvs = resp.json()["kvs"]
+                        VECTOR_CLOCK = resp.json()["causal-context"]
+                except:
+                    logging.warning("Attempting to connect to: " + address)
         sleep(1)
 
 
@@ -276,14 +278,14 @@ def get_key(key):
     # we are in the shard of the key
     if ADDRESS in ip_list:
         #either we have a higher vector clock than the client for the given key, or the clocks are concurrent
-        if key in kvs and (compare_causal_context(kvs[key][1], client_cc)) or (not compare_causal_context(kvs[key][1], client_cc) and not compare_causal_context( client_cc, kvs[key][1])):
+        if key in kvs and (compare_causal_context(kvs[key][1], client_cc) or (not compare_causal_context(kvs[key][1], client_cc) and not compare_causal_context( client_cc, kvs[key][1]))):
             return (
                 json.dumps(
                     {
                         "doesExist": True,
                         "message": "Retrieved successfully",
                         "value": str(kvs[key][0]),
-                        "causal-context": merge_vector_clocks(kvs[key][1], client_cc),
+                        "causal-context": merge_vector_clocks(kvs[key][1], client_cc)
                     }
                 ),
                 200)
@@ -295,8 +297,9 @@ def get_key(key):
     for node in ip_list:
         if node != ADDRESS:
             try:
-                r = requests.get(f"http://{node}/kvs/keys/{key}", data=json.dumps(data),timeout=.2)
+                r = requests.get(f"http://{node}/kvs/keys/{key}", data=json.dumps(data),timeout=2)
                 response_json = json.loads(r.content)
+                #response_json = r.json()
                 response_json["address"] = node
                 shardReached = True
                 f_addr = node
@@ -305,11 +308,19 @@ def get_key(key):
 
             except requests.exceptions.Timeout:
                 continue
+            except Exception as inst:
+                return (json.dumps(
+                    {
+                        "error": f"Unable to connect to shard\n{inst}\n response, contents {r.content}",
+                        "message": f"Error in GET for {node}",
+                        "causal-context":  data["causal-context"]
+                    }
+                ), 504)
 
     if not shardReached:
         return (json.dumps({
                             "error": "Unable to satisfy request",
-                            "message": "Error in GET",
+                            "message": "Error in GET"
                         }), 400)
     else:
         return (json.dumps(
@@ -318,7 +329,7 @@ def get_key(key):
                             "error": "Key does not exist",
                             "message": "Error in GET",
                             "address": f_addr,
-                            "causal-context":  data["causal-context"],
+                            "causal-context":  data["causal-context"]
                         }
                     ),
                     404                 )
@@ -333,7 +344,7 @@ def get_key_count():
     return (json.dumps({
         "message": "Key count retrieved successfully",
         "key-count": key_count,
-        "shard-id": get_my_shard_id(),
+        "shard-id": get_my_shard_id()
     }), 200)
 
 
@@ -357,7 +368,7 @@ def put_key(key):
                 {
                     "message": "Error in PUT",
                     "error": "Value is missing",
-                    "causal-context": data["causal-context"],
+                    "causal-context": data["causal-context"]
                 }
             ),
             400,
@@ -368,7 +379,7 @@ def put_key(key):
                 {
                     "message": "Error in PUT",
                     "error": "Key is too long",
-                    "causal-context": data["causal-context"],
+                    "causal-context": data["causal-context"]
                 }
             ),
             400,
@@ -394,7 +405,7 @@ def put_key(key):
                     {
                         "message": "Added successfully",
                         "replaced": replaced,
-                        "causal-context": kvs[key][1],
+                        "causal-context": kvs[key][1]
                     }
                 ),
                 status_code,
@@ -405,7 +416,7 @@ def put_key(key):
                     {
                         "message": "Updated successfully",
                         "replaced": replaced,
-                        "causal-context": kvs[key][1],
+                        "causal-context": kvs[key][1]
                     }
                 ),
                 status_code,
@@ -446,7 +457,7 @@ def put_key(key):
                     "message": forwarded_data["message"],
                     "replaced": forwarded_data["replaced"],
                     "address": forwarded,
-                    "causal-context": forwarded_data["causal-context"],
+                    "causal-context": forwarded_data["causal-context"]
                 }
             ),
             resp.status_code,
@@ -470,7 +481,7 @@ def get_shard_by_id(id):
             "message": "Shard information retrieved successfully",
             "shard-id": id,
             "key-count": len(kvs),
-            "replicas": VIEW[id],
+            "replicas": VIEW[id]
         }), 200
     else:
         if id in VIEW:
@@ -488,7 +499,7 @@ def get_shard_by_id(id):
                     {
                         "error": "Unable to reach any node in shard",
                         "message": "Error in GET",
-                        "causal-context": VECTOR_CLOCK,
+                        "causal-context": VECTOR_CLOCK
                     }
                 ),
                 500,
@@ -499,7 +510,7 @@ def get_shard_by_id(id):
                     {
                         "error": "Shard id does not exist",
                         "message": "Error in GET",
-                        "causal-context": VECTOR_CLOCK,
+                        "causal-context": VECTOR_CLOCK
                     }
                 ),
                 404,
@@ -557,7 +568,7 @@ def broadcast_to_shard(key, value, shard_ID, new_clock):
 
 # TODO task 4
 # TODO: Decide if keys of kvs, vector clock, and VIEW are strings or numbers
-def rehash_keys(total_KVS, num_shards):
+def rehash_keys(total_KVS, total_VC, num_shards):
     global kvs
     # initialize the kvs_set and vc_set that will hold the kvs for each shard
     kvs_set = {}
@@ -571,9 +582,7 @@ def rehash_keys(total_KVS, num_shards):
     for key in total_KVS:
         shard_num = get_shard_for_key(key, VIEW)
         kvs_set[str(shard_num)][key] = total_KVS[key]
-        vc_set[str(shard_num)][
-            key
-        ] = 0  # init vector clock  0's because we don't have to preserve causality between view changes
+        vc_set[str(shard_num)] = total_VC  # init vector clock  0's because we don't have to preserve causality between view changes
 
     for shard_num in VIEW:
         for address in VIEW[shard_num]:
@@ -584,7 +593,7 @@ def rehash_keys(total_KVS, num_shards):
                         "updated-kvs": kvs_set[str(shard_num)],
                         "updated-vc": vc_set[str(shard_num)],
                         "updated-view": VIEW,
-                        "updated-nodes": nodes,
+                        "updated-nodes": nodes
                     }
                 ),
             )
@@ -644,6 +653,7 @@ def rehash_keys(total_KVS, num_shards):
 
 
 # TODO Deeper testing when GET/PUT are implemented
+#Time to rework view change
 @app.route("/kvs/view-change", methods=["PUT"])
 def perform_view_change():
     # These variables will be changed over the course of performing a view change
@@ -651,6 +661,8 @@ def perform_view_change():
     global view_string
     global VIEW
     global REPL
+    global VECTOR_CLOCK
+    global kvs
     # return {message: "Not Implemented :("}, 404
     # recieve data from request
     json_dict = json.loads(request.get_data())
@@ -663,14 +675,15 @@ def perform_view_change():
             {
                 "message": "View change has begun, returning kvs and context",
                 "kvs": kvs,
-                "causal-context": VECTOR_CLOCK,
+                "causal-context": VECTOR_CLOCK
             }
         )
 
-    total_KVS = {}
-    total_vector_clock = {}
+    total_KVS = kvs
+    total_vector_clock = VECTOR_CLOCK
     # Retrieve the KVS of each node in current view
     for shard_num in VIEW:
+        #Iterate through each address in each shard
         for address in VIEW[shard_num]:
             if address != ADDRESS:
                 try:
@@ -679,7 +692,7 @@ def perform_view_change():
                         data=json.dumps({"rebalance": True}),
                         timeout=0.1,
                     )
-                    sys.stderr.write("resp completed")
+                    #sys.stderr.write("resp completed")
                     resp_json_contents = json.loads(resp.content)
                     node_kvs = resp_json_contents["kvs"]
                     node_vector_clock = resp_json_contents["causal-context"]
@@ -687,31 +700,22 @@ def perform_view_change():
                         "Received data from {address}, kvs: {node_kvs}, vc {node_vector_clock}"
                     )
                     for key in node_kvs:
-                        if (
-                            key not in total_KVS
-                        ):  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
+                        #For each key, if the key is not already in total_KVS, we add it to total_KVS
+                        if (key not in total_KVS):  # this is a new key, add it to the total kvs and its corresponding vector clock to the total vector clock
                             total_KVS[key] = node_kvs[key]
-                            total_vector_clock[key] = node_vector_clock[key]
-                        else:  # Key is already in total kvs, compare vector clocks and add the most recent data. Then merge the vector clocks
-                            vector_compare = compare_vector_clock(
-                                total_vector_clock[key], node_vector_clock[key]
+                            total_vector_clock[key] = node_vector_clock[key] #Not sure about this line
+                        else:  # Key is already in total kvs, compare vector clocks of keys, and decide which one is more recent
+                            #Compare causal context of incoming key, and current key in kvs
+                            causal_compare = compare_causal_context(
+                                node_kvs[key][1], total_KVS[key][1]
                             )
-                            if (
-                                vector_compare == -1
-                            ):  # total_kvs needs to update its value
+                            if (causal_compare == True):  #set total_KVS[key] = kvs[key]
                                 total_KVS[key] = node_kvs[key]
-                                total_vector_clock[key] = node_vector_clock[key]
-                            # if vector_compare == 1: # we already have the must up to date value, so just merge vector clocks
-                            if (
-                                vector_compare == 0
-                            ):  # keys are concurrent, to address this we will has the key and choose the lowest valued hash.
-                                total_KVS[key] = choose_concurrent_value(
-                                    total_KVS[key], node_kvs[key]
-                                )
+                                total_vector_clock[key] = node_kvs[key][1][key]
                             # in all cases, merge the two vector clocks
-                            total_vector_clock[key] = merge_vector_clocks(
-                                total_vector_clock[key], total_vector_clock[key]
-                            )
+                            # total_vector_clock[key] = merge_vector_clocks(
+                            #     total_vector_clock[key], total_vector_clock[key]
+                            # )
 
                 except TimeoutError:
                     # Node isn't up, so move on to the next.
@@ -737,12 +741,12 @@ def perform_view_change():
     VIEW = {}
     for i in range(len(nodes) // REPL):
         VIEW[str(i)] = nodes[i * REPL : (i + 1) * REPL]
-
+    
     # assign the collected KVS to shards in new view to all nodes in new view.
-    shard_list = rehash_keys(total_KVS, len(nodes) // REPL)
+    shard_list = rehash_keys(total_KVS, total_vector_clock, len(nodes) // REPL)
 
     # Return success message
-    return {"message": "View change successful", "shards": shard_list}, 200
+    return json.dumps({"message": "View change successful", "shards": shard_list}), 200
 
 
 # When a node receives a request to update their view, set global variables pertaining to view, kvs, and vector clock
@@ -770,7 +774,7 @@ def delete_key(key):
             return {
                 "doesExist": False,
                 "error": "Key does not exist",
-                "message": "Error in DELETE",
+                "message": "Error in DELETE"
             }, 404
         else:
             del kvs[key]
@@ -785,7 +789,7 @@ def delete_key(key):
         except:
             return {
                 "error": "Unable to connect to shard",
-                "message": "Error in DELETE",
+                "message": "Error in DELETE"
             }, 503
         return r.content, r.status_code
     return {
@@ -798,6 +802,9 @@ def delete_key(key):
 def gossip():
     global kvs
     global VECTOR_CLOCK
+    global VIEW_CHANGE_IN_PROGRESS
+    if VIEW_CHANGE_IN_PROGRESS:
+        return json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}), 400
     #Load data
     json_dict = json.loads(request.get_data())
 
@@ -810,7 +817,7 @@ def gossip():
     kvs = copy.deepcopy(mergedKVS)
     VECTOR_CLOCK = copy.deepcopy(mergedVC)
 
-    return json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK})
+    return json.dumps({"kvs": kvs, "causal-context": VECTOR_CLOCK}), 200
 
 
 # returns the shard ID for the given key
