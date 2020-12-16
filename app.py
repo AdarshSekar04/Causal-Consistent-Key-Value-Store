@@ -82,9 +82,187 @@ def gossiper():
 
 # TODO task 1 logically sound but needs testing
 #Need to change GET, so that we check the causal history of each key
+# def get_key(key):
+#     #global output
+#     shard_ID = get_shard_for_key(key, VIEW)
+#     ip_list = VIEW[shard_ID]
+#     #If the current address is in the target shard
+#     data = {"causal-context": {}}
+#     try:
+#         data = json.loads(request.get_data())
+#     except: 
+#         print("foo")
+
+#     if ADDRESS in ip_list:
+#         #This if takes care of case where there is no causal context
+#         # if (
+#         #     (not request.get_data() or "causal-context" not in request.json) and key not in request.json["causal-context"]
+#         # ):
+#         if data == {} or "causal-context" not in data or data["causal-context"]  == {} or key not in data["causal-context"]: 
+#         #  # check that there is no causal context for the key
+#             # there is no causal history
+#             if key not in kvs:
+#                 return (
+#                     json.dumps(
+#                         {
+#                             "doesExist": False,
+#                             "error": "Key does not exist",
+#                             "message": "Error in GET",
+#                             "causal-context": data["causal-context"]
+#                         }
+#                     ),
+#                     404,
+#                 )
+#             else:
+#                 #We get the value of the key, and its causal context from our kvs
+#                 key_val = kvs[key][0]
+#                 key_causal_context = {}
+#                 if len(kvs[key]) > 1:
+#                     key_causal_context = kvs[key][1]
+#                 #Now, we return that key with its causal context
+#                 return (
+#                     json.dumps(
+#                         {
+#                             "doesExist": True,
+#                             "message": "Retrieved successfully",
+#                             "value": str(key_val),
+#                             "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
+#                         }
+#                     ),
+#                     200,
+#                 )
+
+#         else:
+#             # if there is causal history
+#             # stall if the vector clock for the key is > local vector clock
+#             data = json.loads(request.get_data())
+#             if "causal-context" in data and key in data["causal-context"]:
+#                 #Store the context of the key we are trying to find
+#                 key_context = data["causal-context"]
+#                 #If the key is not in our VECTOR_CLOCK, or the key_context is not equal to our VECTOR_CLOCK
+#                 # TODO use compare_causal_context to compare causal context of the client with the causal context of the key trying to 
+#                 if (key not in VECTOR_CLOCK or  compare_causal_context(key_context, kvs[key][1])) and ("forwarded" not in data):
+#                     # reach out to all other nodes in the shard, to try to see if any has the correct VECTOR_CLOCK for that key
+
+#                     #check concurrent case
+
+#                     shard_ID = get_my_shard_id()
+#                     for node in VIEW[shard_ID]:
+#                         if ADDRESS == node:
+#                             continue
+#                         #Using a try block to handle timeouts. Timeouts take care of infinite looping
+#                         try:
+#                             forward_data = data
+#                             forward_data["forwarded"] = True
+#                             r = requests.get(f"http://{node}/kvs/keys/{key}", data= json.dumps(forward_data), timeout=2)
+#                         except requests.exceptions.Timeout:
+#                             continue
+#                         #If the key does exist, we return the value associated with it
+#                         if (
+#                             r.json()["doesExist"]
+#                             and (key in r.json()["causal-context"])
+#                             and r.json()["causal-context"][key] > VECTOR_CLOCK[key]
+#                         ):
+#                             key_value = r.json()["value"]
+#                             #Get the causal context of that key, and return it
+#                             key_causal_context = r.json()["causal-context"][key]
+#                             return (
+#                                 json.dumps(
+#                                     {
+#                                         "doesExist": True,
+#                                         "message": "Retrieved successfully",
+#                                         "value": key_value,
+#                                         "address": node,
+#                                         "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
+#                                     }
+#                                 ),
+#                                 200,
+#                             )
+#                     #If no node had the right value, we return
+#                     return (json.dumps({
+#                         "error": "Unable to satisfy request",
+#                         "message": "Error in GET",
+#                     }), 400)
+#                 #Else if the key is not in VECTOR_CLOCK or the context is not equal to the clock for that key, and it's a forwarded message, return False
+                
+#                 elif not compare_causal_context( kvs[key][1], key_context) and not compare_causal_context(  key_context, kvs[key][1]):
+#                     return (
+#                                 json.dumps(
+#                                     {
+#                                         "doesExist": True,
+#                                         "message": "Retrieved successfully",
+#                                         "value": key_value,
+#                                         "address": node,
+#                                         "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
+#                                     }
+#                                 ),
+#                                 200,
+#                             )
+#                 elif(key not in VECTOR_CLOCK or not compare_causal_context( kvs[key][1], key_context)) and ("forwarded" in data):
+#                     return (
+#                     json.dumps(
+#                         {
+#                             "doesExist": False,
+#                             "error": "Key does not exist",
+#                             "message": "Error in GET",
+#                             "causal-context":  data["causal-context"],
+#                         }
+#                     ),
+#                     404,
+#                 )
+#             #Else, we found the right key, so we return it along with it's causal context
+#             key_val = kvs[key][0]
+#             key_causal_context = kvs[key][1]
+#             return (
+#                 json.dumps(
+#                     {
+#                         "doesExist": True,
+#                         "message": "Retrieved successfully",
+#                         "value": key_val,
+#                         "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
+#                     }
+#                 ),
+#                 200,
+#             )
+#     #Else, if our address is not in the ip_list, the key should be in a different shard, so forward the query to all addresses in the shard till we get a response
+#     else:
+#         # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
+#         # Only returns error in the case that all nodes in the target replica are unreachable
+
+#         # data = json.loads(request.get_data())
+#         for ip in ip_list:
+#             try:
+#                 r = requests.get(f"http://{ip}/kvs/keys/{key}", data=json.dumps(data),timeout=.2)
+                
+#                 # response_json = r.json()
+#                 response_json = json.loads(r.content)
+#                 response_json["address"] = ip
+#                 return json.dumps(response_json), r.status_code
+#             except requests.exceptions.Timeout:
+#                 continue
+#             except Exception as inst:
+#                 return (json.dumps(
+#                     {
+#                         "error": f"Unable to connect to shard\n{inst}\n response, contents {r.content}",
+#                         "message": f"Error in GET for {ip}",
+#                         "causal-context":  data["causal-context"],
+#                     }
+#                 ), 504)
+
+#         return (
+#             json.dumps(
+#                 {
+#                     "error": "Unable to connect to shard",
+#                     "message": "Error in GET",
+#                     "causal-context":  data["causal-context"],
+#                 }
+#             ),
+#             503,
+#         )
+
 @app.route("/kvs/keys/<string:key>", methods=["GET"])
 def get_key(key):
-    #global output
+    shardReached = False
     shard_ID = get_shard_for_key(key, VIEW)
     ip_list = VIEW[shard_ID]
     #If the current address is in the target shard
@@ -93,156 +271,59 @@ def get_key(key):
         data = json.loads(request.get_data())
     except: 
         print("foo")
+    client_cc = data["causal-context"]
 
+    # we are in the shard of the key
     if ADDRESS in ip_list:
-        #This if takes care of case where there is no causal context
-        # if (
-        #     (not request.get_data() or "causal-context" not in request.json) and key not in request.json["causal-context"]
-        # ):
-        if data == {} or "causal-context" not in data or data["causal-context"]  == {} or key not in data["causal-context"]: 
-        #  # check that there is no causal context for the key
-            # there is no causal history
-            if key not in kvs:
-                return (
-                    json.dumps(
-                        {
-                            "doesExist": False,
-                            "error": "Key does not exist",
-                            "message": "Error in GET",
-                            "causal-context": data["causal-context"]
-                        }
-                    ),
-                    404,
-                )
-            else:
-                #We get the value of the key, and its causal context from our kvs
-                key_val = kvs[key][0]
-                key_causal_context = {}
-                if len(kvs[key]) > 1:
-                    key_causal_context = kvs[key][1]
-                #Now, we return that key with its causal context
-                return (
-                    json.dumps(
-                        {
-                            "doesExist": True,
-                            "message": "Retrieved successfully",
-                            "value": str(key_val),
-                            "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
-                        }
-                    ),
-                    200,
-                )
-
-        else:
-            # if there is causal history
-            # stall if the vector clock for the key is > local vector clock
-            data = json.loads(request.get_data())
-            if "causal-context" in data and key in data["causal-context"]:
-                #Store the context of the key we are trying to find
-                key_context = data["causal-context"]
-                #If the key is not in our VECTOR_CLOCK, or the key_context is not equal to our VECTOR_CLOCK
-                # TODO use compare_causal_context to compare causal context of the client with the causal context of the key trying to 
-                if (key not in VECTOR_CLOCK or  compare_causal_context(key_context, kvs[key][1])) and ("forwarded" not in data):
-                    # reach out to all other nodes in the shard, to try to see if any has the correct VECTOR_CLOCK for that key
-                    shard_ID = get_my_shard_id()
-                    for node in VIEW[shard_ID]:
-                        if ADDRESS == node:
-                            continue
-                        #Using a try block to handle timeouts. Timeouts take care of infinite looping
-                        try:
-                            forward_data = data
-                            forward_data["forwarded"] = True
-                            r = requests.get(f"http://{node}/kvs/keys/{key}", data= forward_data, timeout=2)
-                        except requests.exceptions.Timeout:
-                            continue
-                        #If the key does exist, we return the value associated with it
-                        if (
-                            r.json()["doesExist"]
-                            and (key in r.json()["causal-context"])
-                            and r.json()["causal-context"][key] > VECTOR_CLOCK[key]
-                        ):
-                            key_value = r.json()["value"]
-                            #Get the causal context of that key, and return it
-                            key_causal_context = r.json()["causal-context"][key]
-                            return (
-                                json.dumps(
-                                    {
-                                        "doesExist": True,
-                                        "message": "Retrieved successfully",
-                                        "value": key_value,
-                                        "address": node,
-                                        "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
-                                    }
-                                ),
-                                200,
-                            )
-                    #If no node had the right value, we return
-                    return (json.dumps({
-                        "error": "Unable to satisfy request",
-                        "message": "Error in GET",
-                    }), 400)
-                #Else if the key is not in VECTOR_CLOCK or the context is not equal to the clock for that key, and it's a forwarded message, return False
-                elif(key not in VECTOR_CLOCK or key_context[key] <= VECTOR_CLOCK[key]) and ("forwarded" in data):
-                    return (
-                    json.dumps(
-                        {
-                            "doesExist": False,
-                            "error": "Key does not exist",
-                            "message": "Error in GET",
-                            "causal-context":  data["causal-context"],
-                        }
-                    ),
-                    404,
-                )
-            #Else, we found the right key, so we return it along with it's causal context
-            key_val = kvs[key][0]
-            key_causal_context = kvs[key][1]
+        #either we have a higher vector clock than the client for the given key, or the clocks are concurrent
+        if key in kvs and (compare_causal_context(kvs[key][1], client_cc)) or (not compare_causal_context(kvs[key][1], client_cc) and not compare_causal_context( client_cc, kvs[key][1])):
             return (
                 json.dumps(
                     {
                         "doesExist": True,
                         "message": "Retrieved successfully",
-                        "value": key_val,
-                        "causal-context": merge_vector_clocks(key_causal_context, data["causal-context"]),
+                        "value": str(kvs[key][0]),
+                        "causal-context": merge_vector_clocks(kvs[key][1], client_cc),
                     }
                 ),
-                200,
-            )
-    #Else, if our address is not in the ip_list, the key should be in a different shard, so forward the query to all addresses in the shard till we get a response
-    else:
-        # TODO: Verify that tries to forward the request to all nodes that may contain the value (determined by hash of key)
-        # Only returns error in the case that all nodes in the target replica are unreachable
-
-        # data = json.loads(request.get_data())
-        for ip in ip_list:
+                200)
+        
+            
+    
+    #either we don't have the key, or we are in the past or not in the correct shard. We need to reach out to nodes in the shard that holds the key
+    f_addr = ""
+    for node in ip_list:
+        if node != ADDRESS:
             try:
-                r = requests.get(f"http://{ip}/kvs/keys/{key}", data=json.dumps(data),timeout=.2)
-                
-                # response_json = r.json()
+                r = requests.get(f"http://{node}/kvs/keys/{key}", data=json.dumps(data),timeout=.2)
                 response_json = json.loads(r.content)
-                response_json["address"] = ip
-                return json.dumps(response_json), r.status_code
+                response_json["address"] = node
+                shardReached = True
+                f_addr = node
+                if r.status_code == 200:
+                    return json.dumps(response_json), r.status_code
+
             except requests.exceptions.Timeout:
                 continue
-            except Exception as inst:
-                return (json.dumps(
-                    {
-                        "error": f"Unable to connect to shard\n{inst}\n response, contents {r.content}",
-                        "message": f"Error in GET for {ip}",
-                        "causal-context":  data["causal-context"],
-                    }
-                ), 504)
 
-        return (
-            json.dumps(
-                {
-                    "error": "Unable to connect to shard",
-                    "message": "Error in GET",
-                    "causal-context":  data["causal-context"],
-                }
-            ),
-            503,
-        )
+    if not shardReached:
+        return (json.dumps({
+                            "error": "Unable to satisfy request",
+                            "message": "Error in GET",
+                        }), 400)
+    else:
+        return (json.dumps(
+                        {
+                            "doesExist": False,
+                            "error": "Key does not exist",
+                            "message": "Error in GET",
+                            "address": f_addr,
+                            "causal-context":  data["causal-context"],
+                        }
+                    ),
+                    404                 )
+
+        
 
 
 # TODO task 1 logically sound but needs testing
