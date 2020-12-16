@@ -17,3 +17,5 @@ Adarsh Sekar:
 The group as a whole got together to perform testing, so everyone took part in testing and debugging.
 Everyone worked very hard during the last couple days to ensure we were submitting a solid project. 
 The majority of time spent on the project was together as a group. 
+
+We fail tests test_view_change_2, and test_view_change_3, because of a weird heisenbug, where after we store the key in our kvs, it suddenly disappears. We did multiple checks to see where it disappears, but whenever it does (which is not consistent, as sometimes this doesn't happen), it happens after we do operations that don't involve the kvs
