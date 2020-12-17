@@ -392,11 +392,11 @@ def put_key(key):
         if "causal-context" in data:
             passed_VC = data["causal-context"]
         # end if
-        status_code = localStore(key, val, curr_shard, passed_VC)
-        # Now we've stored it locally, need to check if we need to broadcast
+        # First broadcast
         if "broadcast" not in data:
             broadcast_to_shard(key, val, curr_shard, passed_VC)
-        #
+        #then store locally
+        status_code = localStore(key, val, curr_shard, passed_VC)
         replaced = True
         if status_code == 201:
             replaced = False
@@ -447,7 +447,7 @@ def put_key(key):
                         "message": "Error in PUT"
                     }
                 ),
-                400,
+                400
             )
         #Otherwise, return the data, with the forwarded address
         forwarded_data = json.loads(resp.content)
@@ -460,7 +460,7 @@ def put_key(key):
                     "causal-context": forwarded_data["causal-context"]
                 }
             ),
-            resp.status_code,
+            resp.status_code
         )
 
 
@@ -570,28 +570,31 @@ def broadcast_to_shard(key, value, shard_ID, new_clock):
 # TODO: Decide if keys of kvs, vector clock, and VIEW are strings or numbers
 def rehash_keys(total_KVS, total_VC, num_shards):
     global kvs
+    global ADDRESS
     # initialize the kvs_set and vc_set that will hold the kvs for each shard
     kvs_set = {}
-    vc_set = {}
+    #vc_set = {}
     for i in range(num_shards):
         kvs_set[str(i)] = {}
-        vc_set[str(i)] = {}
+        #vc_set[str(i)] = {}
 
     # Add each key to the corresponding kvs it belongs to.
     # Set the vector clock to 0 since causality does not need to be preserved between view changes
     for key in total_KVS:
         shard_num = get_shard_for_key(key, VIEW)
-        kvs_set[str(shard_num)][key] = total_KVS[key]
-        vc_set[str(shard_num)] = total_VC  # init vector clock  0's because we don't have to preserve causality between view changes
+        kvs_set[shard_num][key] = total_KVS[key]
+        #vc_set[str(shard_num)] = total_VC  # init vector clock  0's because we don't have to preserve causality between view changes
 
     for shard_num in VIEW:
         for address in VIEW[shard_num]:
+            # if address ==  ADDRESS:
+            #     kvs = kvs_set[shard_num]
             resp = requests.put(
                 f"http://{address}/kvs/update-view",
                 data=json.dumps(
                     {
-                        "updated-kvs": kvs_set[str(shard_num)],
-                        "updated-vc": vc_set[str(shard_num)],
+                        "updated-kvs": kvs_set[shard_num],
+                        "updated-vc": total_VC,
                         "updated-view": VIEW,
                         "updated-nodes": nodes
                     }
