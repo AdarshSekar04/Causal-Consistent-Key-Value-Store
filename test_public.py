@@ -115,7 +115,7 @@ def disconnectFromNetwork(subnetName, instanceName):
 ################################# Unit Test Class ############################################################
 
 extra_credit = False # this feature is WIP
-print_response = False
+print_response = True
 
 class TestHW3(unittest.TestCase):
     buildDockerImage()
@@ -281,6 +281,7 @@ class TestHW3(unittest.TestCase):
 
         self.nodes_equal(old_nodes,shards["nodes"])
 
+        print("\n\n\nGoing to put keys now\n\n\n")
         keys = 100
         key_counts0 = {}
 
@@ -318,6 +319,8 @@ class TestHW3(unittest.TestCase):
         response = client.viewChange(new_view,new_repl_factor,port)
         key_counts1 = self.view_change_response_helper(response,new_nodes,new_shard_count)
         print(key_counts1)
+
+        print("\n\n\nView change done 1\n\n\n")
 
         time.sleep(5)
         port = new_ins[0]["host_port"]

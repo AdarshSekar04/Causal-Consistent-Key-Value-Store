@@ -761,11 +761,13 @@ def update_view():
     global VIEW_CHANGE_IN_PROGRESS
     global nodes
     global VIEW
+    global ADDRESS
     kvs = json_dict["updated-kvs"]
     VECTOR_CLOCK = json_dict["updated-vc"]
     nodes = json_dict["updated-nodes"]
     VIEW = json_dict["updated-view"]
-    VIEW_CHANGE_IN_PROGRESS = False
+    if ADDRESS in VIEW:
+        VIEW_CHANGE_IN_PROGRESS = False
 
 
 # optional TODO
